@@ -1,0 +1,11 @@
+This document explains how to compile and execute the current codebase.
+
+
+1) Create directory 'build'
+2) In the build directory run 'cmake -DHTGS_INCLUDE_DIR=/path/to/htgs/src ../'
+3) run 'make'
+4) Execute with './mitigate'
+
+The input file is specified in main. Currently there are no command-line arguments, so modifying the input file requires recompilation.
+
+You will need to get HTGS from https://github.com/usnistgov/HTGS. It is a header-only library, so just have cmake point to the src directory from the HTGS repo.
