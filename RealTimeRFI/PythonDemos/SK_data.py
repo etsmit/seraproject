@@ -14,6 +14,7 @@ from matplotlib import rcParams
 # Arguments in order
 # FileName: Name of file
 # k:        Number of frequency channels (combine with time resolution to get frequency resolution)
+# m:        Number of integrations (starts from 0)
 # N:        Number of integrations averaged before dumping to dyn_spec
 # pol:      Pol X (0) or Pol Y (1)
 
@@ -108,7 +109,7 @@ nint  = n
 
 # get the data
 tsData = np.load(infile)
-#trunc_tsData = tsData[:27092480]
+tsData = tsData[1100*2000:]#truncating tsData
 tsLen = tsData.shape[0]
 
 # required polarization channels
@@ -160,6 +161,10 @@ sk_result = SK_EST(dyn_spec,n)
 
 lt,ut = spectralKurtosis_thresholds(np.float(nspec), N = np.float(n), d = 1, p = 0.0013499)
 
+
+print 'Lower Threshold: '+str(lt)
+print 'Upper Threshold: '+str(ut)
+
 #------------------------------------------------------------
 
 print('SK_value: '+str(np.min(sk_result)))
@@ -174,6 +179,12 @@ plt.text(nfreq/2,(np.max(sk_result)+np.min(sk_result))/2,str(np.min(sk_result)))
 
 plt.show()
 plt.savefig(infile+'_'+str(nspec)+'_'+str(k)+'_'+str(pol)+'_sk.png')
+plt.gcf().clear()
 
+spec_mean = np.mean(dyn_spec)
+spec_rms = np.std(dyn_spec)
+
+#pylab.imshow(dyn_spec,aspect='auto',vmin=spec_mean-2*spec_rms, vmax=spec_mean+5*spec_rms)
+#plt.show()
 
 
