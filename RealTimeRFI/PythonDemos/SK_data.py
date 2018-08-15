@@ -24,6 +24,7 @@ m = int(sys.argv[3])
 n = int(sys.argv[4])
 pol = int(sys.argv[5])
 
+#too much data for my computer?
 if m*k > 1024*24570:
     sys.exit()
 
