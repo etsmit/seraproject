@@ -26,7 +26,13 @@ pol = int(sys.argv[5])
 
 #too much data for my computer?
 if m*k > 1024*24570:
+    print("Too Many Datapoints! Exiting...")
+    print('Reduce datapoints by ratio:'+str((1024.*24570)/(m*k)))
     sys.exit()
+#comment this out if your computer can handle more
+
+#truncate list (shouldn't be needed if m*k condition is satisfied)
+truncate=False
 
 #------------------------------------------------------------
 #   FUNCTIONS
@@ -63,6 +69,7 @@ def SK_EST(a,n):
 
 #Threshold functions
 #Taken from Nick Joslyn's helpful code https://github.com/NickJoslyn/helpful-BL/blob/master/helpful_BL_programs.py
+#Which are Python implementations of Nita et. al. https://www.worldscientific.com/doi/abs/10.1142/S2251171716410099
 def upperRoot(x, moment_2, moment_3, p):
     upper = np.abs( (1 - scipy.special.gammainc( (4 * moment_2**3)/moment_3**2, (-(moment_3-2*moment_2**2)/moment_3 + x)/(moment_3/2/moment_2)))-p)
     return upper
@@ -103,15 +110,17 @@ def spectralKurtosis_thresholds(M, N = n, d = d, p = 0.0013499):
 rcParams.update({'figure.autolayout' : True})
 rcParams.update({'axes.formatter.useoffset' : False})
 
-# create 512 time bins of 1024 spectra, each with 32 integrations.
+
 # there may be a few bytes not used.
 nfreq = k
 nint  = n
 
 # get the data
 tsData = np.load(infile)
-tsData = tsData[1100*2000:]#truncating tsData
+if truncate:
+    tsData = tsData[1100*2000:]#truncating tsData
 tsLen = tsData.shape[0]
+print(tsLen)
 
 # required polarization channels
 realpol = 2*pol
@@ -169,6 +178,7 @@ print 'Upper Threshold: '+str(ut)
 #------------------------------------------------------------
 
 print('SK_value: '+str(np.min(sk_result)))
+#pop the DC channel out because it is SK flagged for some reason
 #print('SK_value: '+str(sk_result[193]))
 
 plt.plot(sk_result,'b+')
@@ -177,9 +187,9 @@ plt.plot(np.zeros(k)+ut,'r:')
 plt.plot(np.zeros(k)+lt,'r:')
 
 plt.text(nfreq/2,(np.max(sk_result)+np.min(sk_result))/2,str(np.min(sk_result)))
-
-plt.show()
 plt.savefig(infile+'_'+str(nspec)+'_'+str(k)+'_'+str(pol)+'_sk.png')
+plt.show()
+
 plt.gcf().clear()
 
 spec_mean = np.mean(dyn_spec)
