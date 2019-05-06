@@ -5,7 +5,7 @@
 #www.github.com/NickJoslyn/BL-RAW/
 #Takes two inputs:
 #1: input filename (BL raw format) ** for now just put one arbitrary character - it gets rewritten
-#2: npy file to save to !!(do NOT attach .npy on the end - i'll do that)!!
+#2: npy file to save to !!(do NOT attach .npy on the end - i'll do that)!! **also input a character
 #--------------------------------------------------
 
 import numpy as np
@@ -17,6 +17,8 @@ outfile = sys.argv[2]
 
 #first define file to open because I had to move data to a different directory
 inputFileName = '/home/scratch/esmith/blc00_guppi_58373_19977_F01417+1651_0013.0000.raw'
+#and destination to save to since I'm running this out of git directory
+outfile = 'users/esmith/RFI_MIT/SK_OHmegamasers/npybtldata/blc00'
 print('Opening file: '+inputFileName)
 
 #init datalists
@@ -63,7 +65,7 @@ for CHANNEL in range(64):
 
         #Get the ASCII value of the card and convert to char
 			for index in range(cardLength):
-            		cardString += chr(readIn[currentBytesPassed + index + lineCounter * cardLength])
+            			cardString += chr(readIn[currentBytesPassed + index + lineCounter * cardLength])
 
         #ETS no need for this
         #print(cardString)
