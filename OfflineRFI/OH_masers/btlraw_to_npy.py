@@ -45,7 +45,7 @@ currentBytesPassed = 0
 blockNumber = 0
 for CHANNEL in range(64):
 	print('---------------------')
-	print('Channel '+str(CHANNEL)+' of 64')
+	print('Channel '+str(CHANNEL+1)+' of 64')
   	x_real=[]
 	x_imag=[]
 	y_real=[]

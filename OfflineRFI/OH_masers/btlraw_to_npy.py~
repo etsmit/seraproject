@@ -18,7 +18,7 @@ outfile = sys.argv[2]
 #first define file to open because I had to move data to a different directory
 inputFileName = '/home/scratch/esmith/blc00_guppi_58373_19977_F01417+1651_0013.0000.raw'
 #and destination to save to since I'm running this out of git directory
-outfile = 'users/esmith/RFI_MIT/SK_OHmegamasers/npybtldata/blc00'
+outfile = '/users/esmith/RFI_MIT/SK_OHmegamasers/npybtldata/blc00'
 print('Opening file: '+inputFileName)
 
 #init datalists
