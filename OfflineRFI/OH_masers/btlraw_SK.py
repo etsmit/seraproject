@@ -16,7 +16,7 @@ inputFileName = sys.argv[1]
 outfile = sys.argv[2]
 
 #first define file to open since I'm running this out of git directory
-inputFileName = '/users/esmith/RFI_MIT/SK_OHmegamasers/npybtldata/blc00_x_0.npy'
+inputFileName = '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_0.npy'
 #and destination to save to
 outfile = '/users/esmith/RFI_MIT/SK_OHmegamasers/btl_SKspectra/blc00_x_0_SK.npy'
 
@@ -84,8 +84,11 @@ print('Opening file: '+inputFileName)
 data = np.load(inputFileName)
 print('Data shape: '+str(data.shape))
 
-
-plt.hist(data,bins = 20)
+plt.plot(data.real[::1600],'r.')
+plt.plot(data.real[1::1600],'b.')
+plt.plot(data.real[2::1600],'g.')
+plt.plot(data.real[3::1600],'k.')
+#plt.hist(data,bins = 20)
 plt.show()
 
 

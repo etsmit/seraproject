@@ -18,7 +18,7 @@ outfile = sys.argv[2]
 #first define file to open because I had to move data to a different directory
 inputFileName = '/home/scratch/esmith/blc00_guppi_58373_19977_F01417+1651_0013.0000.raw'
 #and destination to save to since I'm running this out of git directory
-outfile = '/users/esmith/RFI_MIT/SK_OHmegamasers/npybtldata/blc00'
+outfile = '/home/scratch/esmith/RFI_MIT/npybtldata/blc00'
 print('Opening file: '+inputFileName)
 
 #init datalists
@@ -37,14 +37,10 @@ fileBytes = os.path.getsize(inputFileName)
 
 cardLength = 80     #BL Raw Information
 
-#Ensure the same card is not read twice
-lineCounter = 0     
-currentBytesPassed = 0
 
 # ETS ALL the blocks!
 #WARNING these numbers are hardcoded but ALSO not expected to change (for a full 17Gb file)
 #Smaller raw BTL files are not filled to their byte max, and will have less blocks (I think)
-blockNumber = 0
 for CHANNEL in range(64):
 	print('---------------------')
 	print('Channel '+str(CHANNEL+1)+' of 64')
@@ -53,6 +49,11 @@ for CHANNEL in range(64):
 	y_real=[]
 	y_imag=[]
 
+	#Ensure the same card is not read twice
+	lineCounter = 0     
+	currentBytesPassed = 0
+
+	blockNumber = 0
 	while (blockNumber < 128):
 		#print('---------------------')
 		#print('Block: '+str(blockNumber+1))
@@ -165,7 +166,7 @@ for CHANNEL in range(64):
 	np_x = np.reshape(np_x, (NDIM,-1))
 	np_y = np.reshape(np_y, (NDIM,-1))
 
-	print('New shape: '+str(np_x.shape))
+	print('New shape: '+str(np_x.shape)+' (x4)')
 
 #now save the data
 #two filenames for each polarization
