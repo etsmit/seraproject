@@ -16,7 +16,8 @@ inputFileName = sys.argv[1]
 outfile = sys.argv[2]
 
 #first define file to open since I'm running this out of git directory
-inputFileName = '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_0.npy'
+chan1= '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_0.npy'
+chan2= '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_1.npy'
 #and destination to save to
 outfile = '/users/esmith/RFI_MIT/SK_OHmegamasers/btl_SKspectra/blc00_x_0_SK.npy'
 
@@ -79,17 +80,21 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 #--------------------------------------
 
 
-print('Opening file: '+inputFileName)
+print('Opening file: '+chan1)
+data_chan1 = np.load(chan1)
+print('Data shape: '+str(data_chan1.shape))
+print('#--------------------------------------')
 
-data = np.load(inputFileName)
-print('Data shape: '+str(data.shape))
+print('Opening file: '+chan2)
+data_chan2 = np.load(chan2)
+print('Data shape: '+str(data_chan2.shape))
+print('#--------------------------------------')
 
-plt.plot(data.real[::1600],'r.')
-plt.plot(data.real[1::1600],'b.')
-plt.plot(data.real[2::1600],'g.')
-plt.plot(data.real[3::1600],'k.')
-#plt.hist(data,bins = 20)
-plt.show()
+print(data_chan1[:30,0])
+print(data_chan2[30:100,0])
+
+
+
 
 
 
