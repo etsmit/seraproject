@@ -91,7 +91,7 @@ print('Data shape: '+str(data_chan2.shape))
 print('#--------------------------------------')
 
 print(data_chan1[:30,0])
-print(data_chan2[:30,0])
+print(data_chan2[30:100,0])
 
 
 

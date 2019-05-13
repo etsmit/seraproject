@@ -8,9 +8,15 @@
 import numpy as np
 import astropy.io.fits as pyfits
 import os,sys
-import matplotlib.pyplot as plt
 
-infile = sys.argv[1]
+
+
+#pulls from my scratch directory if full path not given
+if sys.argv[1][0] != '/':
+	inputFileName = my_dir + sys.argv[1]
+else:
+	inputFileName = sys.argv[1]
+
 show_cols=sys.argv[2] #boolean
 
 
@@ -31,6 +37,7 @@ ifs = datatable.field('IFNUM')
 cals= datatable.field('CAL')
 fds= datatable.field('FDNUM')
 sigs= datatable.field('SIG')
+times = datatable.field('TIMESTAMP')
 
 print('---------------------------------------')
 print('Polarizations:')
@@ -51,6 +58,10 @@ print(pols[:30])
 print('---------------------------------------')
 print('SIG states:')
 print(pols[:30])
+
+print('---------------------------------------')
+print('Time stamps:')
+print(times[:30])
 
 #if show_scans:
 #	print('----------------------------------------')

@@ -2,7 +2,7 @@
 #btlraw_SK.py
 #Opens one output npy file from btl_to_raw.npy and performs SK 
 #Takes two inputs:
-#1: input filename (BL raw format) ** for now just put one arbitrary character - it gets rewritten
+#1: input filename (BL raw format) from my_dir
 #2: npy file to save to ** also add a random character
 #--------------------------------------------------
 
@@ -11,15 +11,15 @@ import numpy as np
 import os,sys
 import matplotlib.pyplot as plt
 
-#input variables
-inputFileName = sys.argv[1]
-outfile = sys.argv[2]
+my_dir='/home/scratch/esmith/RFI_MIT/'
 
-#first define file to open since I'm running this out of git directory
-chan1= '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_0.npy'
-chan2= '/home/scratch/esmith/RFI_MIT/npybtldata/blc00_x_1.npy'
+#input variables
+inputFileName = my_dir+'npybtldata/blocks/'+sys.argv[1]
+outfile = my_dir+'btl_SKspectra/'+sys.argv[2]
+
+
 #and destination to save to
-outfile = '/users/esmith/RFI_MIT/SK_OHmegamasers/btl_SKspectra/blc00_x_0_SK.npy'
+
 
 
 #--------------------------------------
@@ -80,18 +80,13 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 #--------------------------------------
 
 
-print('Opening file: '+chan1)
-data_chan1 = np.load(chan1)
-print('Data shape: '+str(data_chan1.shape))
+print('Opening file: '+inputFileName)
+data= np.load(inputFileName)
+print('Data shape: '+str(data.shape))
 print('#--------------------------------------')
 
-print('Opening file: '+chan2)
-data_chan2 = np.load(chan2)
-print('Data shape: '+str(data_chan2.shape))
-print('#--------------------------------------')
 
-print(data_chan1[:30,0])
-print(data_chan2[30:100,0])
+
 
 
 
