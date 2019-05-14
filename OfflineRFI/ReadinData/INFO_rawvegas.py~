@@ -8,9 +8,15 @@
 import numpy as np
 import astropy.io.fits as pyfits
 import os,sys
-import matplotlib.pyplot as plt
 
-infile = sys.argv[1]
+
+
+#pulls from my scratch directory if full path not given
+if sys.argv[1][0] != '/':
+	inputFileName = my_dir + sys.argv[1]
+else:
+	inputFileName = sys.argv[1]
+
 show_cols=sys.argv[2] #boolean
 
 

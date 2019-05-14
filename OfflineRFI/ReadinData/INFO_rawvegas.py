@@ -21,7 +21,7 @@ show_cols=sys.argv[2] #boolean
 
 
 print('Reading Data...')
-hdulist = pyfits.open(infile)
+hdulist = pyfits.open(inputFileName)
 datatable = hdulist['SINGLE DISH'].data
 data = datatable.field('DATA')
 
