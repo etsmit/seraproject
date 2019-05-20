@@ -59,9 +59,9 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 	Nd = N * d
 	#Statistical moments
 	moment_1 = 1
-	moment_2 = ( 2*(M**2) * Nd * (1 + Nd) ) / ( (M - 1) * (6 + 5*M*Nd + (M**2)*(Nd**2)) )
-	moment_3 = ( 8*(M**3)*Nd * (1 + Nd) * (-2 + Nd * (-5 + M * (4+Nd))) ) / ( ((M-1)**2) * (2+M*Nd) *(3+M*Nd)*(4+M*Nd)*(5+M*Nd))
-	moment_4 = ( 12*(M**4)*Nd*(1+Nd)*(24+Nd*(48+84*Nd+M*(-32+Nd*(-245-93*Nd+M*(125+Nd*(68+M+(3+M)*Nd)))))) ) / ( ((M-1)**3)*(2+M*Nd)*(3+M*Nd)*(4+M*Nd)*(5+M*Nd)*(6+M*Nd)*(7+M*Nd) )
+	moment_2 = float(( 2*(M**2) * Nd * (1 + Nd) )) / ( (M - 1) * (6 + 5*M*Nd + (M**2)*(Nd**2)) )
+	moment_3 = float(( 8*(M**3)*Nd * (1 + Nd) * (-2 + Nd * (-5 + M * (4+Nd))) )) / ( ((M-1)**2) * (2+M*Nd) *(3+M*Nd)*(4+M*Nd)*(5+M*Nd))
+	moment_4 = float(( 12*(M**4)*Nd*(1+Nd)*(24+Nd*(48+84*Nd+M*(-32+Nd*(-245-93*Nd+M*(125+Nd*(68+M+(3+M)*Nd)))))) )) / ( ((M-1)**3)*(2+M*Nd)*(3+M*Nd)*(4+M*Nd)*(5+M*Nd)*(6+M*Nd)*(7+M*Nd) )
 	#Pearson Type III Parameters
 	delta = moment_1 - ( (2*(moment_2**2))/moment_3 )
 	beta = 4 * ( (moment_2**3)/(moment_3**2) )
@@ -123,6 +123,7 @@ def overlayflags_3D(a,f,m):
 	
 #replace all the flagged data points with zeros. Not ideal scientifically.
 def zeros(a, big_f):
+	print('---------------------------------------------')
 	out_arr = np.array(a)
 	print('Replacing flagged data with zeros')
 	for i in range(big_f.shape[0]):
@@ -130,25 +131,17 @@ def zeros(a, big_f):
 			for k in range(big_f.shape[2]):
 				if big_f[i,j,k] == 1:
 					out_arr[i,j,k] = np.float64(0.0)
+	print('---------------------------------------------')
 	return out_arr
 
 
 
 
 #replace with previous good data (or future good)
-def old_good(f,index,badrange):
-	#finds previous good data to replace
-	#helps keep the amount of 'tabs' in check
-	if j < badrange:
-		for backwards_index in range(index):
-			print(j)
-
-
-
-
 def previous_good(a,big_f,x):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags) 
  	out_arr = np.array(a)
+	print('---------------------------------------------')
 	print('Replacing flagged data with previous good data')
 	for i in range(big_f.shape[0]):
 		for j in range(big_f.shape[1]):
@@ -156,15 +149,31 @@ def previous_good(a,big_f,x):
 				if big_f[i,j,k] == 1:
 				#science
 					if (j >= x):
+						print('Looking back at previous data')
 						n=1
 						while (big_f[i,j-n*x,k] == 1):
+							if (j-n*x < 0):
+								print('No previous good data found')
+								break
 							n += 1
-						good_data = old_good(big_f[i,j-(n-1)*x,k])
+						print('Replacing data from '+str(n)+'dataranges back')
+						out_arr[i,j,k] = a[i,j+n*x,k]
 
+					if (j < x):
+						print('Looking forward at following data')
+						good_data = old_good(big_f[i,j+x,k])
+						n=1
+						while (big_f[i,j+n*x,k] == 1):
+							if (j+n*x >= big_f.shape[1]):
+								print('No good data found')
+								break
+							n += 1
+						out_arr[i,j,k] = a[i,j+n*x,k]
+						if (j+n*x >= big_f.shape[1]):
+							print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+							print('Coarse chan: '+str(i)+' Pol: '+str(k)+'|| Entire channel is flagged')
 
-
-				if (j < x):
-					good_data = old_good(big_f[i,j+x,k])
+							print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
 	return out_arr
 
 
@@ -172,16 +181,29 @@ def previous_good(a,big_f,x):
 
 
 #replace with statistical noise
-def statistical_noise(a,big_f):
+def statistical_noise(a,big_f,x):
+	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
  	out_arr = np.array(a)
 	print('Replacing data with zeros')
 	for i in range(big_f.shape[0]):
-		for j in range(big_f.shape[1]):
+		for j in range(0,big_f.shape[1],x):
 			for k in range(big_f.shape[2]):
-				if big_f[i,j,k] == 1:
-				#science
-					print(j)
 
+				#create good data to pull noise stats from
+				good_data = []
+				for y in range(big_f.shape[1]):
+					if big_f[i,y,k] == 0:
+						good_data.append(out_arr[i,y,k])
+				good_data = np.array(good_data)
+				print(str(len(good_data))+' good data points')
+				ave = np.average(good_data)
+				std = np.std(good_data)
+
+				if big_f[i,j,k] == 1:
+					#science
+					print(j)
+					out_arr[i,j:j+x,k] = np.random.normal(ave,std,x)
+					
 	return out_arr
 
 
