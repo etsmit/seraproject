@@ -44,6 +44,7 @@ for blockNumber in range(numblocks):
 	header,data = rawFile.read_next_data_block(blockNumber)
 	if blockNumber == 0:
 		print(header)
+		print('Datatype: '+type(data[0,0,0])
 
 	save_fname = outfile+'block'+str(blockNumber)+'.npy'
 	np.save(save_fname,data)

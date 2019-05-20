@@ -52,6 +52,7 @@ for blockNumber in range(numblocks):
 
 	header,data = rawFile.read_next_data_block(blockNumber)
 	if blockNumber == 0:
+		print('Datatype: '+type(data[0,0,0])
 		for line in header:
 			print(line+':  '+str(header[line]))
 

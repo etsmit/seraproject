@@ -14,12 +14,12 @@
 
 #Imports:
 
-#import numpy as np
-#import os,sys
+import numpy as np
+import os,sys
 
-#import scipy as sp
-#import scipy.optimize
-#import scipy.special
+import scipy as sp
+import scipy.optimize
+import scipy.special
 
 
 #---------------------------------------------------------
@@ -31,9 +31,9 @@ def SK_EST(a,n,m):
 	#m=ints to use (from beginning of a)          
 	nchans=a.shape[0]                             
 	d=1#shape parameter(expect 1)                                       
-	print('Nchans: ',nchans)                      
-	print('M: ',m)                                                                
-	print('d: ',d)                                
+	#print('Nchans: ',nchans)                      
+	#print('M: ',m)                                                                
+	#print('d: ',d)                                
 	#make s1 and s2 as defined by whiteboard (by 2010b Nita paper)
 	#s2 definition will probably throw error if n does not integer divide m
 	sum1=np.sum(a[:,:m],axis=1)                                            
@@ -81,7 +81,7 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 
 # First to interpolate data points to flag from SK results
 
-def 2D_overlayflags(a,f):
+def overlayflags_2D(a,f):
 	#'explode' the flags file back up to the size of the original data array
 	#for 2D case (not _overtime variant)
 	print('Data shape: '+str(a.shape))
@@ -94,7 +94,7 @@ def 2D_overlayflags(a,f):
 				bigflags[i/2,:,i%2] = 1
 				#flagging an entire coarse channel isnt very helpful huh
 
-def 3D_overlayflags(a,f,m):
+def overlayflags_3D(a,f,m):
 	#'explode' the flags file back up to the size of the original data array
 	#for 3D case (_overtime variant)
 	#m was the given SK_ints from guppi_SK_overtime.py
@@ -124,7 +124,7 @@ def 3D_overlayflags(a,f,m):
 #replace all the flagged data points with zeros. Not ideal scientifically.
 def zeros(a, big_f):
 	out_arr = np.array(a)
-	print('Replacing data with zeros')
+	print('Replacing flagged data with zeros')
 	for i in range(big_f.shape[0]):
 		for j in range(big_f.shape[1]):
 			for k in range(big_f.shape[2]):
@@ -141,20 +141,30 @@ def old_good(f,index,badrange):
 	#helps keep the amount of 'tabs' in check
 	if j < badrange:
 		for backwards_index in range(index):
-			if f[
+			print(j)
 
 
 
 
 def previous_good(a,big_f,x):
+	#x is the amount of data needed (bad_datarange from 3D_overlayflags) 
  	out_arr = np.array(a)
-	print('Replacing data with zeros')
+	print('Replacing flagged data with previous good data')
 	for i in range(big_f.shape[0]):
 		for j in range(big_f.shape[1]):
 			for k in range(big_f.shape[2]):
 				if big_f[i,j,k] == 1:
 				#science
-				good_data = old_good(big_f
+					if (j >= x):
+						n=1
+						while (big_f[i,j-n*x,k] == 1):
+							n += 1
+						good_data = old_good(big_f[i,j-(n-1)*x,k])
+
+
+
+				if (j < x):
+					good_data = old_good(big_f[i,j+x,k])
 	return out_arr
 
 
@@ -170,6 +180,7 @@ def statistical_noise(a,big_f):
 			for k in range(big_f.shape[2]):
 				if big_f[i,j,k] == 1:
 				#science
+					print(j)
 
 	return out_arr
 
