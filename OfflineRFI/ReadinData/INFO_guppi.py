@@ -32,7 +32,7 @@ print('Number of blocks: '+str(r.find_n_data_blocks()))
 print('Reading data shape...')
 print('This may take a while, feel free to kill the process')
 
-hdr,data = r.read_next_data_block(0)
+#hdr,data = r.read_next_data_block(0)
 
-print('Data Shape: '+str(data.shape))
+#print('Data Shape: '+str(data.shape))
 

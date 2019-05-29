@@ -32,7 +32,7 @@ else:
 	inputFileName = sys.argv[1]
 
 
-outdir = my_dir+'/'+sys.argv[2]+'/'
+outdir = my_dir+sys.argv[2]+'/'
 os.system('mkdir '+outdir)
 
 #-----------------------------
@@ -52,9 +52,12 @@ for blockNumber in range(numblocks):
 
 	header,data = rawFile.read_next_data_block(blockNumber)
 	if blockNumber == 0:
-		print('Datatype: '+type(data[0,0,0])
+		print('Datatype: '+str(type(data[0,0,0])))
 		for line in header:
 			print(line+':  '+str(header[line]))
+
+	if blockNumber <10:
+		blockNumber = '0'+str(blockNumber)
 
 	save_fname = sys.argv[2]+'_block'+str(blockNumber)+'.npy'
 	np.save(outdir+save_fname,data)

@@ -1,7 +1,7 @@
 #--------------------------------------------------
 #btlraw_SK.py
 #Opens one output npy file from btl_to_raw.npy and performs SK 
-#Takes two inputs:
+#Takes four inputs:
 #1: input filename (BL raw format) from my_dir
 #2: npy file to save to
 #--------------------------------------------------

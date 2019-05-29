@@ -50,15 +50,19 @@ print('Data shape: '+str(data.shape))
 print('#--------------------------------------')
 
 
-mismatch = data.shape[1] % FFTLEN
+num_coarsechan = data.shape[0]
+num_timesamples= data.shape[1]
+num_pol = data.shape[2]
+
+mismatch = num_timesamples % FFTLEN
 if mismatch != 0:
 	print('Warning: FFTLEN does not divide the amount of time samples')
 	print(str(mismatch)+' time samples at the end will be dropped')
-kept_samples = data.shape[1] - mismatch
+kept_samples = num_timesamples- mismatch
 
 n=1
 
-ints = np.float64(data.shape[1]/FFTLEN)
+ints = np.float64(num_timesamples/FFTLEN)
 print('With given FFTLEN, there are '+str(ints)+' spectra per polarization per coarse channel')
 
 #calculate thresholds
@@ -73,8 +77,8 @@ print('Performing FFT...')
 
 sk_results=[]
 
-for i in range(32):
-	for j in range(2):
+for i in range(num_coarsechan):
+	for j in range(num_pol):
 		print('Coarse Channel '+str(i))
 		print('Polarization '+str(j))
 		data_to_FFT = data[i,:kept_samples,j]

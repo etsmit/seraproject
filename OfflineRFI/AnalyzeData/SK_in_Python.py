@@ -95,6 +95,7 @@ def overlayflags_2D(a,f):
 				#flagging an entire coarse channel isnt very helpful huh
 
 def overlayflags_3D(a,f,m):
+	print('---------------------------------------------')
 	#'explode' the flags file back up to the size of the original data array
 	#for 3D case (_overtime variant)
 	#m was the given SK_ints from guppi_SK_overtime.py
@@ -109,12 +110,15 @@ def overlayflags_3D(a,f,m):
 			for k in range(f.shape[2]):
 				if int(f[i,j,k]) == 1:
 					#where in the original data does this correspond to?
+					print('Flagged point found at (i,j,k)= '+str(i)+', '+str(j)+', '+str(k))
 					big_i = i/2
 					big_j = j*bad_datarange
 					big_k = i%2
+					print('Flagging points at big (i,j,k)= '+str(big_i)+', '+str(big_j)+ ' to '+str(big_j+bad_datarange)+', '+str(big_k))
 					bigflags[big_i,big_j:big_j+bad_datarange,big_k] = 1
 					#currently ignores any datapoints that might have been dropped.
 					#fix for this soon
+	print('---------------------------------------------')
 	return bigflags,bad_datarange
 
 
@@ -127,8 +131,10 @@ def zeros(a, big_f):
 	out_arr = np.array(a)
 	print('Replacing flagged data with zeros')
 	for i in range(big_f.shape[0]):
+		print('Coarse Chan '+str(i))
 		for j in range(big_f.shape[1]):
 			for k in range(big_f.shape[2]):
+				print('Pol '+str(k))
 				if big_f[i,j,k] == 1:
 					out_arr[i,j,k] = np.float64(0.0)
 	print('---------------------------------------------')
@@ -140,12 +146,14 @@ def zeros(a, big_f):
 #replace with previous good data (or future good)
 def previous_good(a,big_f,x):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags) 
- 	out_arr = np.array(a)
 	print('---------------------------------------------')
+	out_arr = np.array(a)
 	print('Replacing flagged data with previous good data')
 	for i in range(big_f.shape[0]):
+		print('Coarse Chan '+str(i))
 		for j in range(big_f.shape[1]):
 			for k in range(big_f.shape[2]):
+				print('Pol '+str(k))
 				if big_f[i,j,k] == 1:
 				#science
 					if (j >= x):
@@ -174,6 +182,7 @@ def previous_good(a,big_f,x):
 							print('Coarse chan: '+str(i)+' Pol: '+str(k)+'|| Entire channel is flagged')
 
 							print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+	print('---------------------------------------------')
 	return out_arr
 
 
@@ -183,11 +192,14 @@ def previous_good(a,big_f,x):
 #replace with statistical noise
 def statistical_noise(a,big_f,x):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
+	print('---------------------------------------------')
  	out_arr = np.array(a)
 	print('Replacing data with zeros')
 	for i in range(big_f.shape[0]):
+		print('Coarse Chan '+str(i))
 		for j in range(0,big_f.shape[1],x):
 			for k in range(big_f.shape[2]):
+				print('Pol '+str(k))
 
 				#create good data to pull noise stats from
 				good_data = []
@@ -203,7 +215,7 @@ def statistical_noise(a,big_f,x):
 					#science
 					print(j)
 					out_arr[i,j:j+x,k] = np.random.normal(ave,std,x)
-					
+	print('---------------------------------------------')
 	return out_arr
 
 
