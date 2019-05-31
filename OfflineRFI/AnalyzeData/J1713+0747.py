@@ -1,6 +1,6 @@
 #Specific program for executing SK on an entire J1713_0747 guppi file
 #Lots of things will be hardcoded
-#pretty much hardcoded version of guppi_SK_overtime
+#pretty much hardcoded version of guppi_SK_time
 
 
 import os,sys

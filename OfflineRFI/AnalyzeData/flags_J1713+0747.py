@@ -1,5 +1,5 @@
-#SK_stats_overtime
-#input a SK result npy file and the upper and lower thresholds
+#flags_J1713_0747
+#input a SK result npy file from J1713+0747 and the upper and lower thresholds
 #outputs a (for now) rudimentary flag mask (1 = RFI, 0 = clean)
 
 
