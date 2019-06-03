@@ -2,8 +2,8 @@
 #btlraw_SK.py
 #Opens one output npy file from guppi_org_by_coarsechan and performs SK 
 #Takes four inputs:
-#1: input filename (BL raw format) from my_dir
-#2: npy file to save to
+#1: input filename (GUPPI raw format) from my_dir
+#2: filename base to save results
 #--------------------------------------------------
 # This does SK over a given number of spectra,
 # so you can see SK over the course of all blocks
@@ -31,9 +31,12 @@ else:
 
 #same for  output destination
 if sys.argv[2][0] != '/':
-	sk_npy = my_dir + sys.argv[2]
+	result = my_dir + sys.argv[2]
 else:
-	sk_npy = sys.argv[2]
+	result = sys.argv[2]
+
+sk_result = result+'_SK.npy'
+flags_result = result+'_flags.npy'
 
 
 
@@ -58,8 +61,8 @@ print('#--------------------------------------')
 #Time sample - FFTLEN check
 mismatch = data.shape[0] % FFTLEN
 if mismatch != 0:
-	print('Warning: FFTLEN does not divide the amount of time samples')
-	print(str(mismatch)+' time samples at the end will be dropped')
+	print('Warning: FFTLEN does not divide the amount of frequency voltages')
+	print(str(mismatch)+' data points at the end will be dropped')
 kept_samples = data.shape[0] - mismatch
 
 n=1
@@ -84,17 +87,13 @@ print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
 
-
-print('Performing FFT...')
-
 tot_sk_results=[]
 
 
 for j in range(2):
 	print('Polarization '+str(j))
-	data_to_FFT = data[:kept_samples,j]
-	data_to_FFT = data_to_FFT.reshape((FFTLEN,-1))
-	s = np.abs(np.fft.fft(data_to_FFT,axis=0))**2
+	s = data[:kept_samples,j].reshape((FFTLEN,-1))
+	s = np.abs(s)**2
 	mid_sk_results=[]
 	print('Performing SK...')
 	for k in range(int(SK_timebins)):
@@ -105,15 +104,49 @@ for j in range(2):
 tot_sk_results = np.array(tot_sk_results)
 print('SK results shape: '+str(tot_sk_results.shape))
 
-
-np.save(sk_npy, tot_sk_results)
-print('SK spectra saved in '+str(sk_npy))
+sk = tot_sk_results
+np.save(sk_result, sk)
+print('SK spectra saved in '+str(sk_result))
 
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
+#------------------------------------------------
+# APPLY FLAGS
+# copied from SK_stats_time.py
+#------------------------------------------------
+
+
+flags = np.zeros(sk.shape)
+tot_points = sk.size
+flagged_pts = 0
+
+#expecting a 3D sk results array for now (overtime)
+pols = sk.shape[0]
+SK_timebins = sk.shape[1]
+finechans = sk.shape[2]
+
+#look at every data point
+for i in range(pols):
+	for j in range(SK_timebins):
+		for k in range(finechans):
+			
+			#is the datapoint outside the threshold?
+			if (sk[i,j,k] < lt) or (sk[i,j,k] > ut):
+				flagged_pts += 1
+				flags[i,j,k] = 1
+
+flagged_percent = (float(flagged_pts)/tot_points)*100
+print(str(flagged_pts)+' datapoints were flagged out of '+str(tot_points))
+print(str(flagged_percent)+'% of data outside acceptable ranges')
+
+np.save(flags_result,flags)
+print('Flags file saved to '+flags_result)
+
 
 print('Done!')
+
+
 
 
 

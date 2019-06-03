@@ -23,12 +23,12 @@ tot_points = sk.size
 flagged_pts = 0
 
 #expecting a 3D sk results array for now (overtime)
-chans_pols = sk.shape[0]
+pols = sk.shape[0]
 SK_timebins = sk.shape[1]
 finechans = sk.shape[2]
 
 #look at every data point
-for i in range(chans_pols):
+for i in range(pols):
 	for j in range(SK_timebins):
 		for k in range(finechans):
 			
