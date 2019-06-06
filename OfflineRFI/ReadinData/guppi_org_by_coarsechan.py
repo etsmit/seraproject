@@ -90,7 +90,7 @@ print('Amount of files: '+str(len(blocks)))
 
 
 
-for chan1 in range(8,256,8):
+for chan1 in range(16,256,8):
 	print('Channels '+str(chan1)+' - '+str(chan1+7))
 	p1 = multiprocessing.Process(target=filler,args=(chan1+0,blocks,))
 	p2 = multiprocessing.Process(target=filler,args=(chan1+1,blocks,))
@@ -118,7 +118,7 @@ for chan1 in range(8,256,8):
 	p6.join()
 	p7.join()
 	p8.join()
-	#mid = time.time()
+	mid = time.time()
 	print('Time so far:')
 	print(mid-start)
 
