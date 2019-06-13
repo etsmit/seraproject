@@ -9,6 +9,7 @@
 
 #Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
 #Lowering SK_ints increases memory usage slightly less than linearly
+#Assumes two polarizations
 #--------------------------------------------------
 
 
@@ -35,7 +36,7 @@ from SK_in_Python import *
 my_dir = '/home/scratch/esmith/RFI_MIT/'
 
 
-#input directory
+#input file
 #pulls from my scratch directory if full path not given
 if sys.argv[1][0] != '/':
 	infile = my_dir + sys.argv[1]
@@ -49,7 +50,7 @@ if sys.argv[2][0] != '/':
 else:
 	base = sys.argv[2]
 
-#save raw data to npy files?
+#save raw data to npy files? 'True' or 'False'
 rawdata = sys.argv[3]
 
 
@@ -57,12 +58,24 @@ rawdata = sys.argv[3]
 SK_ints = int(sys.argv[4])
 #FYI 1032704 (length of each block) has prime divisors (2**9) and 2017
 
+#replacement method
+#can be 'zeros','previousgood','stats' (no quotes)
+method = sys.argv[5]
+
+
+
 
 #--------------------------------------
 # Inits
 #--------------------------------------
 
 n=1
+
+#amount of raw spectra that offset happens on
+#likely hardcode, so double check by looking running without offset and looking at the raw data
+#HAS BEEN FIXED - LEAVE offset_bool=False
+offset = 1560
+offset_bool = False
 
 #filenames to save to
 #'p' stands for polarization
@@ -88,7 +101,10 @@ sk_p2=[]
 spect_results_p1 = []
 spect_results_p2 = []
 
-#flags results get initialization in APPLY FLAGS section (after data shape is determined)
+#array to hold flagging results
+flags_p1 = []
+flags_p2 = []
+
 
 #save raw data
 if rawdata == 'True':
@@ -108,18 +124,35 @@ if rawdata:
 
 start_time = time.time()
 
-#load file
+#init copy of file for replaced data
+print('Getting output datafile ready...')
+outfile = infile[:-4]+'_'+method+infile[-4:]
+print('Saving replaced data to '+outfile)
+os.system('rm '+outfile)
+os.system('cp '+infile+' '+outfile)
+
+#load file and copy
 print('Opening file: '+infile)
 rawFile = GuppiRaw(infile)
+print('Loading copy...')
+out_rawFile = GuppiRaw(outfile)
+
 
 numblocks = rawFile.find_n_data_blocks()
 print('File has '+str(numblocks)+' data blocks')
+
+flagged_pts_p1=0
+flagged_pts_p2=0
 
 
 for block in range(numblocks):
 	print('#--------------------------------------')
 	print('Block: '+str(block))
-	header,data = rawFile.read_next_data_block(block)
+	header,data = rawFile.read_next_data_block()
+	header,outdata = out_rawFile.read_next_data_block()
+
+	#init replacement data
+	new_block = np.zeros(data.shape)
 	
 	#print header for the first block
 	if block == 0:
@@ -127,8 +160,21 @@ for block in range(numblocks):
 		for line in header:
 			print(line+':  '+str(header[line]))
 
+	num_coarsechan = data.shape[0]
+	num_timesamples= data.shape[1]
+	# ^^^ FYI these are time samples of voltage corresponding to a certain frequency
+	# See the notebook drawing on pg 23
+	# FFT has already happened in the roaches
+	num_pol = data.shape[2]
+
 	print('Data shape: '+str(data.shape))
 
+	#fix offset issues
+	#coarse chan 0 is just going to have to be garbage
+	if offset_bool:
+		data = offset_Fix(data,block,offset)
+
+	blockNumber = block
 	#save raw data
 	if rawdata:
 		#pad number to three digits
@@ -139,17 +185,9 @@ for block in range(numblocks):
 			block = '0'+block
 
 		save_fname = base+'_block'+block+'.npy'
-		np.save(base+'/'+save_fname,data)
-		print('Saved under '+outdir+save_fname)
+		np.save(save_fname,data)
+		#print('Saved under '+out_dir+save_fname)
 
-
-
-	num_coarsechan = data.shape[0]
-	num_timesamples= data.shape[1]
-	# ^^^ FYI these are time samples of voltage corresponding to a certain frequency
-	# See the notebook drawing on pg 23
-	# FFT has already happened in the roaches
-	num_pol = data.shape[2]
 
 
 	#Check to see if SK_ints divides the total amount of data points
@@ -170,6 +208,7 @@ for block in range(numblocks):
 
 	#Calculations
 	for j in range(num_pol):
+		flagged_pts=0
 		print('Polarization '+str(j))
 		for k in range(SK_timebins):
 	
@@ -185,15 +224,50 @@ for block in range(numblocks):
 			sk_spect = SK_EST(data_chunk,n,SK_ints)
 			#average power spectrum
 			spectrum = np.average(data_chunk,axis=1)
+			#init flag chunk
+			flag_chunk = np.zeros(data_chunk.shape)
+
+			#flag
+			for chan in range(data.chunk.shape[0]):
+				for spec in range(data.chunk.shape[1]):
+					#is the datapoint outside the threshold?
+					if (sk_spect[j,k] < lt) or (sk_spect[j,k] > ut):
+						flag_chunk[j,k] = 1
+						flagged_pts += 1		
 
 			#append to results
 			if j:
 				sk_p2.append(sk_spect)
 				spect_results_p2.append(spectrum)
+				flags_p2.append(flag_chunk)
+				flagged_pts_p2 += flagged_pts
 			else:
 				sk_p1.append(sk_spect)
 				spect_results_p1.append(spectrum)
+				flags_p1.append(flag_chunk)
+				flagged_pts_p1 += flagged_pts
 
+	#Replace data
+	print('Calculations complete...')
+	print('Replacing Data...')
+
+	
+	if method == 'zeros':
+		#replace data with zeros
+		outdata = repl_zeros(data,np.array(flag_chunk),m)
+
+	if method == 'previousgood':
+		#replace data with previous (or next) good
+		outdata = previous_good(data,np.array(flag_chunk),m)
+
+	if method == 'stats':
+		#replace data with statistical noise derived from good datapoints
+		outdata = statistical_noise(data,np.array(flag_chunk),m)
+
+	#Write back to block
+	outdata = outdata.flatten()
+	outdata = outdata.astype(np.int8)
+	outdata.tofile(out_rawFile)
 
 
 #save SK results
@@ -214,54 +288,30 @@ np.save(spect_npy_p1, spect_results_p1)
 np.save(spect_npy_p2, spect_results_p2)
 print('Spectra saved in {} and {}'.format(spect_npy_p1,spect_npy_p2))
 
-#thresholds again
-print('Upper Threshold: '+str(ut))
-print('Lower Threshold: '+str(lt))
 
-
-
-
-#------------------------------------------------
-# APPLY FLAGS
-# modified from SK_stats_time.py
-#------------------------------------------------
-
-print('Flagging now...')
-
-flags_p1 = np.zeros(sk_p1.shape)
-flags_p2 = np.zeros(sk_p2.shape)
-tot_points = sk_p1.size
-
-
-
-#look at every data point
-for i in range(num_pol):
-	flagged_pts = 0
-	for j in range(SK_timebins*numblocks):
-		for k in range(num_coarsechan):
-			if i:
-				#print('Polarization 2')
-				#is the datapoint outside the threshold?
-				if (sk_p2[j,k] < lt) or (sk_p2[j,k] > ut):
-					flagged_pts += 1
-					flags_p2[j,k] = 1
-			else:
-				#print('Polarization 1')
-				#is the datapoint outside the threshold?
-				if (sk_p1[j,k] < lt) or (sk_p1[j,k] > ut):
-					flagged_pts += 1
-					flags_p1[j,k] = 1
-
-
-	flagged_percent = (float(flagged_pts)/tot_points)*100
-	print(str(flagged_pts)+' datapoints were flagged out of '+str(tot_points))
-	print(str(flagged_percent)+'% of data outside acceptable ranges')
-
-
+#save flags results
+flags_p1 = np.array(flags_p1)
+flags_p2 = np.array(flags_p2)
 
 np.save(flags_npy_p1,flags_p1)
 np.save(flags_npy_p2,flags_p2)
 print('Flags file saved to {} and {}'.format(flags_npy_p1,flags_npy_p2))
+
+#thresholds again
+print('Upper Threshold: '+str(ut))
+print('Lower Threshold: '+str(lt))
+
+tot_points = sk_p1.size
+
+print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
+flagged_percent = (float(flagged_pts_p1)/tot_points)*100
+print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
+
+print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
+flagged_percent = (float(flagged_pts_p2)/tot_points)*100
+print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
+
+
 
 end_time = time.time()
 elapsed = float(end_time-start_time)/60 

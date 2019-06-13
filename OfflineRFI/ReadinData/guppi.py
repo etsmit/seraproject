@@ -264,12 +264,9 @@ class GuppiRaw(object):
         n_pol  = int(header['NPOL'])
         n_samples = int(header['BLOCSIZE']) / n_chan / n_pol
         n_bit = int(header['NBITS'])
-	#------------------------------------------------------------------------------------------
-        #ETS changing this line to allow for dataloading from a custom block, not just the first
-        #original: d = np.ascontiguousarray(np.fromfile(self.file_obj, count=header['BLOCSIZE'], dtype='int8'))
-	self.file_obj.seek(blockNumber*header['BLOCSIZE'])
+
         d = np.ascontiguousarray(np.fromfile(self.file_obj, count=header['BLOCSIZE'], dtype='int8'))
-	self.file_obj.seek(0)
+
         
         # Handle 2-bit and 4-bit data
         if n_bit != 8:
