@@ -10,6 +10,7 @@
 #Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
 #Lowering SK_ints increases memory usage slightly less than linearly
 #Assumes two polarizations
+#see SK_in_Python.py for functions used
 #--------------------------------------------------
 
 
@@ -61,7 +62,9 @@ SK_ints = int(sys.argv[4])
 #replacement method
 #can be 'zeros','previousgood','stats' (no quotes)
 method = sys.argv[5]
-
+if not method_check(method):
+	print('Incorrect replacement method - should be one of "zeros","previousgood","stats"')
+	quit()
 
 
 
@@ -126,16 +129,17 @@ start_time = time.time()
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = infile[:-4]+'_'+method+infile[-4:]
+outfile = infile[:-4]+'_'+method+'1'+infile[-4:]
 print('Saving replaced data to '+outfile)
-os.system('rm '+outfile)
-os.system('cp '+infile+' '+outfile)
+#os.system('rm '+outfile)
+#os.system('cp '+infile+' '+outfile)
 
 #load file and copy
 print('Opening file: '+infile)
 rawFile = GuppiRaw(infile)
 print('Loading copy...')
-out_rawFile = GuppiRaw(outfile)
+#assuming python2 here
+out_rawFile = open(outfile,'r+')
 
 
 numblocks = rawFile.find_n_data_blocks()
@@ -148,8 +152,11 @@ flagged_pts_p2=0
 for block in range(numblocks):
 	print('#--------------------------------------')
 	print('Block: '+str(block))
+	if block == 0:
+		header,headersize = rawFile.read_header()
+		print('Header size: {} bytes'.format(headersize))
 	header,data = rawFile.read_next_data_block()
-	header,outdata = out_rawFile.read_next_data_block()
+	outdata = np.array(data)
 
 	#init replacement data
 	new_block = np.zeros(data.shape)
@@ -159,6 +166,8 @@ for block in range(numblocks):
 		print('Datatype: '+str(type(data[0,0,0])))
 		for line in header:
 			print(line+':  '+str(header[line]))
+
+	out_rawFile.seek(headersize)
 
 	num_coarsechan = data.shape[0]
 	num_timesamples= data.shape[1]
@@ -225,49 +234,56 @@ for block in range(numblocks):
 			#average power spectrum
 			spectrum = np.average(data_chunk,axis=1)
 			#init flag chunk
-			flag_chunk = np.zeros(data_chunk.shape)
+			flag_spec = np.zeros(num_coarsechan)
 
 			#flag
-			for chan in range(data.chunk.shape[0]):
-				for spec in range(data.chunk.shape[1]):
-					#is the datapoint outside the threshold?
-					if (sk_spect[j,k] < lt) or (sk_spect[j,k] > ut):
-						flag_chunk[j,k] = 1
-						flagged_pts += 1		
+			for chan in range(num_coarsechan):
+				#is the datapoint outside the threshold?
+				if (sk_spect[chan] < lt) or (sk_spect[chan] > ut):
+					flag_spec[chan] = 1
+					flagged_pts += 1		
 
 			#append to results
 			if j:
 				sk_p2.append(sk_spect)
 				spect_results_p2.append(spectrum)
-				flags_p2.append(flag_chunk)
+				flags_p2.append(flag_spec)
 				flagged_pts_p2 += flagged_pts
 			else:
 				sk_p1.append(sk_spect)
 				spect_results_p1.append(spectrum)
-				flags_p1.append(flag_chunk)
+				flags_p1.append(flag_spec)
 				flagged_pts_p1 += flagged_pts
 
 	#Replace data
 	print('Calculations complete...')
 	print('Replacing Data...')
 
-	
+	#need to have an array here per block, but also continue appending to the list
+	#transpose is to match the dimensions to the original data
+	repl_p1 = np.transpose(np.array(flags_p1))	
+	repl_p2 = np.transpose(np.array(flags_p2))
+
 	if method == 'zeros':
 		#replace data with zeros
-		outdata = repl_zeros(data,np.array(flag_chunk),m)
+		outdata[:,:,0] = repl_zeros(data[:,:,0],repl_p1,SK_ints)
+		outdata[:,:,1] = repl_zeros(data[:,:,1],repl_p2,SK_ints)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
-		outdata = previous_good(data,np.array(flag_chunk),m)
+		outdata[:,:,0] = previous_good(data[:,:,0],repl_p1,SK_ints)
+		outdata[:,:,1] = previous_good(data[:,:,1],repl_p2,SK_ints)
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
-		outdata = statistical_noise(data,np.array(flag_chunk),m)
+		outdata[:,:,0] = statistical_noise(data[:,:,0],repl_p1,SK_ints)
+		outdata[:,:,1] = statistical_noise(data[:,:,1],repl_p2,SK_ints)
 
 	#Write back to block
-	outdata = outdata.flatten()
-	outdata = outdata.astype(np.int8)
-	outdata.tofile(out_rawFile)
+	print('Re-formatting data and writing back to file...')
+	outdata = guppi_format(outdata)
+	out_rawFile.write(outdata.tostring())
+
 
 
 #save SK results

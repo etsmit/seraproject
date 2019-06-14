@@ -74,7 +74,7 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 
 
 #---------------------------------------------------------
-# Functions for fixing offset at beginning of blocks
+# Function for fixing offset at beginning of blocks
 #---------------------------------------------------------
 
 #takes all the rows down to where the shift ends, and shifts them to the left to match the rest of the file
@@ -87,7 +87,6 @@ def offset_Fix(data_block,blocknum,offset_amt):
 		for chan in range(nchan-1):
 			data_block[chan,:shift_end,i] = data_block[chan+1,:shift_end,i]
 	return data_block
-
 
 
 
@@ -109,22 +108,34 @@ def expand_flags(f,x):
 				out_f[i,j*x:(j+1)*x,k] = f[i,j,k]
 	return out_f
 
+def method_check(s):
+	#checks replacement method
+	if s in ['zeros','previousgood','stats']:
+		return True
+	else:
+		return False
+
+def guppi_format(a):
+	#flatten data array 'a' into format writeable to guppi file
+	out_arr = np.zeros((a.shape[0],a.shape[1]*2,a.shape[2]))
+	out_arr[:,::2,:] = a.real
+	out_arr[:,1::2,:] = a.imag
+	out_arr.flatten()
+	out_arr = out_arr.astype(np.int8)
+	return out_arr
 
 #Next, pick a replacement method.
 
 	
 #replace all the flagged data points with zeros. Not ideal scientifically.
 def repl_zeros(a,f,x):
-
-	print('---------------------------------------------')
 	out_arr = np.array(a)
 	print('Replacing flagged data with zeros')
 	for i in range(f.shape[0]):
 		for j in range(f.shape[1]):
-			for k in range(f.shape[2]):
-				if f[i,j,k] == 1:
-					out_arr[i,j*x:(j+1)*x,k] = np.float64(0.0)
-	print('---------------------------------------------')
+			if f[i,j] == 1:
+				out_arr[i,j*x:(j+1)*x] = np.float64(0.0)
+	
 	return out_arr
 
 
@@ -134,76 +145,69 @@ def repl_zeros(a,f,x):
 def previous_good(a,f,x):
 	# f is the smaller flags array - flag_chunk in guppi_SK_fromraw.py
 	#x is the amount of data needed (should be SK_ints) 
-	print('---------------------------------------------')
+
 	out_arr = np.array(a)
 	print('Replacing flagged data with previous good data')
 	for i in range(f.shape[0]):
 		print('Coarse Chan '+str(i))
 		for j in range(f.shape[1]):
-			for k in range(f.shape[2]):
-				print('Pol '+str(k))
-				if f[i,j,k] == 1:
+			if f[i,j] == 1:
 				#replace
-					if (j >= 1):
-						print('Looking back at previous data')
-						n=1
-						while (f[i,j-n,k] == 1):
-							if (j-n < 0):
-								print('No previous good data found')
-								break
-							n += 1
-						print('Replacing data from '+str(n)+'dataranges back')
-						out_arr[i,j*x:(j+1)*x,k] = a[i,j-(n+1)*x:j-n*x,k]
+				if (j >= 1):
+					print('Looking back at previous data')
+					n=1
+					while (f[i,j-n] == 1):
+						if (j-n < 0):
+							print('No previous good data found')
+							break
+						n += 1
+					print('Replacing data from '+str(n)+'dataranges back')
+					out_arr[i,j*x:(j+1)*x] = a[i,j-(n+1)*x:j-n*x]
 
-					if (j < 1):
-						print('Looking forward at following data')
-						good_data = old_good(big_f[i,j+x,k])
-						n=1
-						while (f[i,j+n,k] == 1):
-							if (j+n >= f.shape[1]):
-								print('No good data found')
-								break
-							n += 1
-						out_arr[i,j*x:(j+1)*x,k] = a[i,j+n*x:j+(n+1)*x,k]
+				if (j < 1):
+					print('Looking forward at following data')
+					good_data = old_good(big_f[i,j+x])
+					n=1
+					while (f[i,j+n] == 1):
 						if (j+n >= f.shape[1]):
-							print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-							print('Coarse chan: '+str(i)+' Pol: '+str(k)+'|| Entire channel is flagged')
+							print('No good data found')
+							break
+						n += 1
+					out_arr[i,j*x:(j+1)*x] = a[i,j+n*x:j+(n+1)*x]
+					if (j+n >= f.shape[1]):
+						print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+						print('Coarse chan: '+str(i)+'|| Entire channel is flagged')
 
-							print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-	print('---------------------------------------------')
+						print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+
 	return out_arr
-
-
 
 
 
 #replace with statistical noise
 def statistical_noise(a,f,x):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
-	print('---------------------------------------------')
+
  	out_arr = np.array(a)
 	print('Replacing data with zeros')
 	for i in range(f.shape[0]):
 		print('Coarse Chan '+str(i))
 		for j in range(0,f.shape[1],x):
-			for k in range(f.shape[2]):
-				print('Pol '+str(k))
 
-				#create good data to pull noise stats from
-				good_data = []
-				for y in range(f.shape[1]):
-					if big_f[i,y,k] == 0:
-						good_data.append(out_arr[i,y*x:(y+1)*x,k])
-				good_data = np.array(good_data)
-				print(str(len(good_data))+' good data points')
-				ave = np.average(good_data)
-				std = np.std(good_data)
+			#create good data to pull noise stats from
+			good_data = []
+			for y in range(f.shape[1]):
+				if big_f[i,y] == 0:
+					good_data.append(out_arr[i,y*x:(y+1)*x])
+			good_data = np.array(good_data)
+			print(str(len(good_data))+' good data points')
+			ave = np.average(good_data)
+			std = np.std(good_data)
+			if big_f[i,j] == 1:
+				#science
+				print(j)
+				out_arr[i,j*x:(j+1)*x] = np.random.normal(ave,std,x)
 
-				if big_f[i,j,k] == 1:
-					#science
-					print(j)
-					out_arr[i,j*x:(j+1)*x,k] = np.random.normal(ave,std,x)
-	print('---------------------------------------------')
 	return out_arr
 
 
