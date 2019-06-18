@@ -117,9 +117,9 @@ def method_check(s):
 
 def guppi_format(a):
 	#flatten data array 'a' into format writeable to guppi file
-	out_arr = np.zeros((a.shape[0],a.shape[1]*2,a.shape[2]))
-	out_arr[:,::2,:] = a.real
-	out_arr[:,1::2,:] = a.imag
+	out_arr = np.zeros((a.shape[0],a.shape[1],a.shape[2]*2))
+	out_arr[:,:,::2] = a.real
+	out_arr[:,:,1::2] = a.imag
 	out_arr.flatten()
 	out_arr = out_arr.astype(np.int8)
 	return out_arr
@@ -128,13 +128,15 @@ def guppi_format(a):
 
 	
 #replace all the flagged data points with zeros. Not ideal scientifically.
-def repl_zeros(a,f,x):
+def repl_zeros(a,f,x,p):
 	out_arr = np.array(a)
-	print('Replacing flagged data with zeros')
+	print('Replacing pol{} flagged data with zeros'.format(p))
 	for i in range(f.shape[0]):
 		for j in range(f.shape[1]):
 			if f[i,j] == 1:
 				out_arr[i,j*x:(j+1)*x] = np.float64(0.0)
+	np.save('/home/scratch/esmith/flaggingtest1_p'+str(p)+'.npy',out_arr)
+	print('saved')
 	
 	return out_arr
 
@@ -142,71 +144,88 @@ def repl_zeros(a,f,x):
 
 
 #replace with previous good data (or future good)
-def previous_good(a,f,x):
+def previous_good(a,f,x,p):
 	# f is the smaller flags array - flag_chunk in guppi_SK_fromraw.py
 	#x is the amount of data needed (should be SK_ints) 
 
 	out_arr = np.array(a)
-	print('Replacing flagged data with previous good data')
+	print('Replacing pol{} flagged data with previous good data'.format(p))
 	for i in range(f.shape[0]):
 		print('Coarse Chan '+str(i))
 		for j in range(f.shape[1]):
+			turnaround = False
 			if f[i,j] == 1:
 				#replace
 				if (j >= 1):
-					print('Looking back at previous data')
-					n=1
+					#print('Looking back at previous data')
+					n=0
 					while (f[i,j-n] == 1):
-						if (j-n < 0):
-							print('No previous good data found')
+						if (j-n <= 0):
+							print('****No previous good data found for channel {}****'.format(i))
+							turnaround=True
 							break
 						n += 1
-					print('Replacing data from '+str(n)+'dataranges back')
-					out_arr[i,j*x:(j+1)*x] = a[i,j-(n+1)*x:j-n*x]
+					if not turnaround:
+						print('j:'+str(j))
+						print('n:'+str(n))
+						out_arr[i,j*x:(j+1)*x] = a[i,(j-n)*x:(j-n+1)*x]
 
-				if (j < 1):
-					print('Looking forward at following data')
-					good_data = old_good(big_f[i,j+x])
-					n=1
+				if (j < 1) or turnaround:
+					#print('Looking forward at following data')
+					n=0#n=0, not 1 is redundant but necessary to keep j+n check inside loop
 					while (f[i,j+n] == 1):
-						if (j+n >= f.shape[1]):
-							print('No good data found')
-							break
 						n += 1
-					out_arr[i,j*x:(j+1)*x] = a[i,j+n*x:j+(n+1)*x]
-					if (j+n >= f.shape[1]):
-						print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-						print('Coarse chan: '+str(i)+'|| Entire channel is flagged')
+						if (j+n >= f.shape[1]):
+							print('****No good data found in channel {}****'.format(i))
+							break
 
-						print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+					if (j+n >= f.shape[1]):
+						break
+					if (j+n < f.shape[1]):
+						out_arr[i,j*x:(j+1)*x] = a[i,(j+n)*x:(j+n+1)*x]
 
 	return out_arr
 
 
 
 #replace with statistical noise
-def statistical_noise(a,f,x):
+def statistical_noise(a,f,x,p):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
-
  	out_arr = np.array(a)
-	print('Replacing data with zeros')
+	print('Replacing Pol{} data with statistical noise'.format(p))
+	print(a.shape)
+	print(f.shape)
+	print(x)
 	for i in range(f.shape[0]):
-		print('Coarse Chan '+str(i))
-		for j in range(0,f.shape[1],x):
+		good_data = []
+		#print('Coarse Chan '+str(i))
+		for j in range(f.shape[1]):
 
 			#create good data to pull noise stats from
-			good_data = []
+			if f[i,j] == 0:
+				good_data.append(out_arr[i,j*x:(j+1)*x])
+
+		good_data = np.array(good_data).flatten()
+		#print('dshape: {}'.format(good_data.shape)) 
+
+		repl_chunk = np.zeros(x,dtype=np.complex64)
+
+		if len(good_data) == 0:
+			print('****No good data in channel {}****'.format(i))
+		elif len(good_data) < 1030:
+			print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
+		else:
+			ave_real = np.mean(good_data.real)
+			ave_imag = np.mean(good_data.imag)
+			std_real = np.std(good_data.real)
+			std_imag = np.std(good_data.imag)
 			for y in range(f.shape[1]):
-				if big_f[i,y] == 0:
-					good_data.append(out_arr[i,y*x:(y+1)*x])
-			good_data = np.array(good_data)
-			print(str(len(good_data))+' good data points')
-			ave = np.average(good_data)
-			std = np.std(good_data)
-			if big_f[i,j] == 1:
-				#science
-				print(j)
-				out_arr[i,j*x:(j+1)*x] = np.random.normal(ave,std,x)
+				if f[i,y] == 1:
+					#science
+					#print(y)
+					repl_chunk.real = np.random.normal(ave_real,std_real,x)
+					repl_chunk.imag = np.random.normal(ave_imag,std_imag,x)
+					out_arr[i,y*x:(y+1)*x] = repl_chunk
 
 	return out_arr
 

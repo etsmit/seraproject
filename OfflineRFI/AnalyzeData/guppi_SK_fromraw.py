@@ -6,6 +6,7 @@
 #2: npy file to save to
 #3: True/False save raw data to block style numpy files
 #4: SK_ints - number of integrations to do SK on at once - is 'M' in the formula
+#5: replacement method
 
 #Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
 #Lowering SK_ints increases memory usage slightly less than linearly
@@ -129,7 +130,7 @@ start_time = time.time()
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = infile[:-4]+'_'+method+'1'+infile[-4:]
+outfile = infile[:-4]+'_'+method+'2'+infile[-4:]
 print('Saving replaced data to '+outfile)
 #os.system('rm '+outfile)
 #os.system('cp '+infile+' '+outfile)
@@ -158,9 +159,12 @@ for block in range(numblocks):
 	header,data = rawFile.read_next_data_block()
 	outdata = np.array(data)
 
-	#init replacement data
+	#init replacement data and flag chunks for replacing
 	new_block = np.zeros(data.shape)
-	
+	repl_chunk_p1=[]
+	repl_chunk_p2=[]	
+
+
 	#print header for the first block
 	if block == 0:
 		print('Datatype: '+str(type(data[0,0,0])))
@@ -248,11 +252,13 @@ for block in range(numblocks):
 				sk_p2.append(sk_spect)
 				spect_results_p2.append(spectrum)
 				flags_p2.append(flag_spec)
+				repl_chunk_p1.append(flag_spec)
 				flagged_pts_p2 += flagged_pts
 			else:
 				sk_p1.append(sk_spect)
 				spect_results_p1.append(spectrum)
 				flags_p1.append(flag_spec)
+				repl_chunk_p2.append(flag_spec)
 				flagged_pts_p1 += flagged_pts
 
 	#Replace data
@@ -264,20 +270,25 @@ for block in range(numblocks):
 	repl_p1 = np.transpose(np.array(flags_p1))	
 	repl_p2 = np.transpose(np.array(flags_p2))
 
+	#need to have an array here per block, but also continue appending to the list
+	#transpose is to match the dimensions to the original data
+	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
+	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
+
 	if method == 'zeros':
 		#replace data with zeros
-		outdata[:,:,0] = repl_zeros(data[:,:,0],repl_p1,SK_ints)
-		outdata[:,:,1] = repl_zeros(data[:,:,1],repl_p2,SK_ints)
+		outdata[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints,0)
+		outdata[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints,1)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
-		outdata[:,:,0] = previous_good(data[:,:,0],repl_p1,SK_ints)
-		outdata[:,:,1] = previous_good(data[:,:,1],repl_p2,SK_ints)
+		outdata[:,:,0] = previous_good(data[:,:,0],repl_chunk_p1,SK_ints,0)
+		outdata[:,:,1] = previous_good(data[:,:,1],repl_chunk_p2,SK_ints,1)
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
-		outdata[:,:,0] = statistical_noise(data[:,:,0],repl_p1,SK_ints)
-		outdata[:,:,1] = statistical_noise(data[:,:,1],repl_p2,SK_ints)
+		outdata[:,:,0] = statistical_noise(data[:,:,0],repl_chunk_p1,SK_ints,0)
+		outdata[:,:,1] = statistical_noise(data[:,:,1],repl_chunk_p2,SK_ints,1)
 
 	#Write back to block
 	print('Re-formatting data and writing back to file...')
