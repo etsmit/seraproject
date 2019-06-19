@@ -130,7 +130,7 @@ start_time = time.time()
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = infile[:-4]+'_'+method+'2'+infile[-4:]
+outfile = infile[:-4]+'_'+method+'1'+infile[-4:]
 print('Saving replaced data to '+outfile)
 #os.system('rm '+outfile)
 #os.system('cp '+infile+' '+outfile)
@@ -171,7 +171,7 @@ for block in range(numblocks):
 		for line in header:
 			print(line+':  '+str(header[line]))
 
-	out_rawFile.seek(headersize)
+	out_rawFile.seek(headersize,1)
 
 	num_coarsechan = data.shape[0]
 	num_timesamples= data.shape[1]
@@ -252,13 +252,13 @@ for block in range(numblocks):
 				sk_p2.append(sk_spect)
 				spect_results_p2.append(spectrum)
 				flags_p2.append(flag_spec)
-				repl_chunk_p1.append(flag_spec)
+				repl_chunk_p2.append(flag_spec)
 				flagged_pts_p2 += flagged_pts
 			else:
 				sk_p1.append(sk_spect)
 				spect_results_p1.append(spectrum)
 				flags_p1.append(flag_spec)
-				repl_chunk_p2.append(flag_spec)
+				repl_chunk_p1.append(flag_spec)
 				flagged_pts_p1 += flagged_pts
 
 	#Replace data
@@ -338,6 +338,7 @@ print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_po
 flagged_percent = (float(flagged_pts_p2)/tot_points)*100
 print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
 
+print('Saved replaced data to '+outfile)
 
 
 end_time = time.time()

@@ -120,7 +120,7 @@ def guppi_format(a):
 	out_arr = np.zeros((a.shape[0],a.shape[1],a.shape[2]*2))
 	out_arr[:,:,::2] = a.real
 	out_arr[:,:,1::2] = a.imag
-	out_arr.flatten()
+	out_arr = out_arr.flatten()
 	out_arr = out_arr.astype(np.int8)
 	return out_arr
 
@@ -135,8 +135,6 @@ def repl_zeros(a,f,x,p):
 		for j in range(f.shape[1]):
 			if f[i,j] == 1:
 				out_arr[i,j*x:(j+1)*x] = np.float64(0.0)
-	np.save('/home/scratch/esmith/flaggingtest1_p'+str(p)+'.npy',out_arr)
-	print('saved')
 	
 	return out_arr
 
@@ -151,7 +149,7 @@ def previous_good(a,f,x,p):
 	out_arr = np.array(a)
 	print('Replacing pol{} flagged data with previous good data'.format(p))
 	for i in range(f.shape[0]):
-		print('Coarse Chan '+str(i))
+		#print('Coarse Chan '+str(i))
 		for j in range(f.shape[1]):
 			turnaround = False
 			if f[i,j] == 1:
@@ -166,8 +164,6 @@ def previous_good(a,f,x,p):
 							break
 						n += 1
 					if not turnaround:
-						print('j:'+str(j))
-						print('n:'+str(n))
 						out_arr[i,j*x:(j+1)*x] = a[i,(j-n)*x:(j-n+1)*x]
 
 				if (j < 1) or turnaround:
@@ -188,26 +184,31 @@ def previous_good(a,f,x,p):
 
 
 
+
 #replace with statistical noise
+def gen_good_data(a,f,x,i):
+	good_data = []
+	#print('Coarse Chan '+str(i))
+	for j in range(f.shape[1]):
+		#create good data to pull noise stats from
+		if f[i,j] == 0:
+			good_data.append(a[i,j*x:(j+1)*x])
+
+	good_data = np.array(good_data).flatten()
+	return good_data
+
+
+
 def statistical_noise(a,f,x,p):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
  	out_arr = np.array(a)
 	print('Replacing Pol{} data with statistical noise'.format(p))
-	print(a.shape)
-	print(f.shape)
-	print(x)
+	#print(a.shape)
+	#print(f.shape)
+	#print(x)
 	for i in range(f.shape[0]):
-		good_data = []
-		#print('Coarse Chan '+str(i))
-		for j in range(f.shape[1]):
-
-			#create good data to pull noise stats from
-			if f[i,j] == 0:
-				good_data.append(out_arr[i,j*x:(j+1)*x])
-
-		good_data = np.array(good_data).flatten()
-		#print('dshape: {}'.format(good_data.shape)) 
-
+		good_data = gen_good_data(out_arr,f,x,i)
+ 
 		repl_chunk = np.zeros(x,dtype=np.complex64)
 
 		if len(good_data) == 0:
@@ -228,6 +229,12 @@ def statistical_noise(a,f,x,p):
 					out_arr[i,y*x:(y+1)*x] = repl_chunk
 
 	return out_arr
+
+#def adj_chan(a,bad_chan):
+	#replace a bad channel with stat. noise derived from adjacent channels
+	
+
+
 
 
 
