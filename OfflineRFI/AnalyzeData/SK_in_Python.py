@@ -66,7 +66,11 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 	delta = moment_1 - ( (2*(moment_2**2))/moment_3 )
 	beta = 4 * ( (moment_2**3)/(moment_3**2) )
 	alpha = moment_3 / (2 * moment_2)
+	beta_one = (moment_3**2)/(moment_2**3)
+	beta_two = (moment_4)/(moment_2**2)
 	error_4 = np.abs( (100 * 3 * beta * (2+beta) * (alpha**4)) / (moment_4 - 1) )
+	kappa = float( beta_one*(beta_two+3)**2 ) / ( 4*(4*beta_two-3*beta_one)*(2*beta_two-3*beta_one-6) )
+	print('kappa: {}'.format(kappa))
 	x = [1]
 	upperThreshold = sp.optimize.newton(upperRoot, x[0], args = (moment_2, moment_3, p))
 	lowerThreshold = sp.optimize.newton(lowerRoot, x[0], args = (moment_2, moment_3, p))
@@ -117,10 +121,15 @@ def method_check(s):
 
 def guppi_format(a):
 	#flatten data array 'a' into format writeable to guppi file
-	out_arr = np.zeros((a.shape[0],a.shape[1],a.shape[2]*2))
-	out_arr[:,:,::2] = a.real
-	out_arr[:,:,1::2] = a.imag
-	out_arr = out_arr.flatten()
+	print('Creating new array...')
+	#out_arr = np.zeros((a.shape[0],a.shape[1],a.shape[2]*2))
+	print('Writing to it...')
+	out_arr = a.view(np.float32)
+	#out_arr[:,:,::2] = a.real
+	#out_arr[:,:,1::2] = a.imag
+	print('Flattening...')
+	out_arr = out_arr.ravel()
+	print('Re-formatting...')
 	out_arr = out_arr.astype(np.int8)
 	return out_arr
 
@@ -159,7 +168,7 @@ def previous_good(a,f,x,p):
 					n=0
 					while (f[i,j-n] == 1):
 						if (j-n <= 0):
-							print('****No previous good data found for channel {}****'.format(i))
+							#print('****No previous good data found for channel {}****'.format(i))
 							turnaround=True
 							break
 						n += 1
@@ -173,6 +182,7 @@ def previous_good(a,f,x,p):
 						n += 1
 						if (j+n >= f.shape[1]):
 							print('****No good data found in channel {}****'.format(i))
+							out_arr = adj_chan(out_arr,f,i,x)
 							break
 
 					if (j+n >= f.shape[1]):
@@ -201,19 +211,21 @@ def gen_good_data(a,f,x,i):
 
 def statistical_noise(a,f,x,p):
 	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
- 	out_arr = np.array(a)
+ 	#out_arr = np.array(a)
 	print('Replacing Pol{} data with statistical noise'.format(p))
 	#print(a.shape)
 	#print(f.shape)
 	#print(x)
 	for i in range(f.shape[0]):
-		good_data = gen_good_data(out_arr,f,x,i)
+		#print('coarsechan {}'.format(i))
+		good_data = gen_good_data(a,f,x,i)
  
 		repl_chunk = np.zeros(x,dtype=np.complex64)
 
 		if len(good_data) == 0:
 			print('****No good data in channel {}****'.format(i))
-		elif len(good_data) < 1030:
+			a = adj_chan(a,f,i,x)
+		elif len(good_data) < (2*x+1):
 			print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
 		else:
 			ave_real = np.mean(good_data.real)
@@ -226,13 +238,33 @@ def statistical_noise(a,f,x,p):
 					#print(y)
 					repl_chunk.real = np.random.normal(ave_real,std_real,x)
 					repl_chunk.imag = np.random.normal(ave_imag,std_imag,x)
-					out_arr[i,y*x:(y+1)*x] = repl_chunk
+					a[i,y*x:(y+1)*x] = repl_chunk
 
-	return out_arr
+	return a
 
-#def adj_chan(a,bad_chan):
-	#replace a bad channel with stat. noise derived from adjacent channels
+def adj_chan(a,f,c,x):
+	#replace a bad channel 'c' with stat. noise derived from adjacent channels
+	out_arr = np.array(a)
+	good_data = []
+
+	adj_chans = [c-2,c-1,c+1,c+2]
+	adj_chans = [i for i in adj_chans if i>=0]
+	adj_chans = [i for i in adj_chans if i<a.shape[1]]
+ 	#print('Pulling data from channels: {}'.format(adj_chans))
 	
+	for i in adj_chans:
+		good_data.extend(list(gen_good_data(out_arr,f,x,i)))
+	good_data = np.array(good_data).flatten()
+
+	ave_real = np.mean(good_data.real)
+	ave_imag = np.mean(good_data.imag)
+	std_real = np.std(good_data.real)
+	std_imag = np.std(good_data.imag)
+
+	out_arr[c,:].real = np.random.normal(ave_real,std_real,out_arr.shape[1])
+	out_arr[c,:].imag = np.random.normal(ave_imag,std_imag,out_arr.shape[1])
+	
+	return out_arr
 
 
 

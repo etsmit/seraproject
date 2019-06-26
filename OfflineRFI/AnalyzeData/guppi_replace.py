@@ -1,18 +1,7 @@
-#--------------------------------------------------
-#btlraw_SK.py
-#Opens GUPPI raw file, performs SK, gibs flags, no replacement
-#Takes four inputs:
-#1: Guppi raw file
-#2: npy file to save to
-#3: True/False save raw data to block style numpy files
-#4: SK_ints - number of integrations to do SK on at once - is 'M' in the formula
-#5: replacement method
+#guppi replace
+#use SK spectrum result array and a given sigma threshold to replace data on a stricter/looser basis
+#
 
-#Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
-#Lowering SK_ints increases memory usage slightly less than linearly
-#Assumes two polarizations
-#see SK_in_Python.py for functions used
-#--------------------------------------------------
 
 
 #Imports
@@ -40,39 +29,51 @@ from SK_in_Python import *
 in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#assuming lustre access machines
 my_dir = '/home/scratch/esmith/RFI_MIT/testing/'#to save (not data) results to
 #out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
-out_dir = in_dir 
+out_dir = in_dir
 
-
-#input file
-#pulls from my scratch directory if full path not given
+#input raw file
+#pulls from in_dir directory if full path not given
 if sys.argv[1][0] != '/':
 	infile = in_dir + sys.argv[1]
 else:
 	infile = sys.argv[1]
 
+#input SKp1 file
+#pulls from in_dir directory if full path not given
+if sys.argv[1][0] != '/':
+	sk_in0 = '/home/scratch/esmith/RFI_MIT/testing/' + sys.argv[2]
+else:
+	sk_in0 = sys.argv[2]
+
+
+#input SKp2 file
+#pulls from in_dir directory if full path not given
+if sys.argv[1][0] != '/':
+	sk_in1 = '/home/scratch/esmith/RFI_MIT/testing/' + sys.argv[3]
+else:
+	sk_in1 = sys.argv[3]
+
 
 #base for filenames to save to (suggest source and scan number)
 if sys.argv[2][0] != '/':
-	base = my_dir + sys.argv[2]
+	base = my_dir + sys.argv[4]
 else:
-	base = sys.argv[2]
+	base = sys.argv[4]
 
-#save raw data to npy files? 'True' or 'False'
-rawdata = sys.argv[3]
 
 
 #number of data points to perform SK on at once/average together for spectrogram
-SK_ints = int(sys.argv[4])
+SK_ints = int(sys.argv[5])
 #FYI 1032704 (length of each block) has prime divisors (2**9) and 2017
 
 #replacement method
 #can be 'zeros','previousgood','stats' (no quotes)
-method = sys.argv[5]
+method = sys.argv[6]
 if not method_check(method):
 	print('Incorrect replacement method - should be one of "zeros","previousgood","stats"')
 	quit()
 
-sigma = float(sys.argv[6])
+sigma = float(sys.argv[7])
 
 
 #--------------------------------------
@@ -81,15 +82,6 @@ sigma = float(sys.argv[6])
 
 n=1
 
-
-#filenames to save to
-#'p' stands for polarization
-sk_npy_p1 = base+'_SK_p1.npy'
-sk_npy_p2 = base+'_SK_p2.npy'
-flags_npy_p1 = base+'_flags_p1.npy'
-flags_npy_p2 = base+'_flags_p2.npy'
-spect_npy_p1 = base+'_spect_p1.npy'
-spect_npy_p2 = base+'_spect_p2.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -103,32 +95,13 @@ print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
 
-#array to hold SK results
-sk_p1=[]
-sk_p2=[]
-
-#array to hold spectrum results
-spect_results_p1 = []
-spect_results_p2 = []
-
-#array to hold flagging results
-flags_p1 = []
-flags_p2 = []
-
-
-#save raw data
-if rawdata == 'True':
-	rawdata = True
-if rawdata == 'False':
-	rawdata = False
-
-if rawdata:
-	print('Saving raw data to npy block style files')
-	os.system('mkdir '+base)
-
 #init copy of file for replaced data
 print('Getting output datafile ready...')
 outfile = infile[:-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(sigma)+infile[-4:]
+
+print('Loading in SK plots...')
+sk_in0 = np.load(sk_in0)
+sk_in1 = np.load(sk_in1)
 
 
 
@@ -139,10 +112,14 @@ outfile = infile[:-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(sigma)+infile[-4:]
 
 start_time = time.time()
 
-
+os.system('ps')
 print('Saving replaced data to '+outfile)
 #os.system('rm '+outfile)
 os.system('cp '+infile+' '+outfile)
+
+if infile == outfile:
+	print('ERROR: input and output files are the same.')
+	sys.exit()
 
 
 #load file and copy
@@ -159,6 +136,12 @@ print('File has '+str(numblocks)+' data blocks')
 flagged_pts_p1=0
 flagged_pts_p2=0
 
+flags_npy_p1 = base+'_s'+str(sigma)+'_m'+str(SK_ints)+'_flags_p1.npy'
+flags_npy_p2 = base+'_s'+str(sigma)+'_m'+str(SK_ints)+'_flags_p2.npy'
+
+flags_p1 = []
+flags_p2 = []
+
 
 for block in range(numblocks):
 	print('#--------------------------------------')
@@ -167,19 +150,10 @@ for block in range(numblocks):
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
 	header,data = rawFile.read_next_data_block()
-
-
+	#outdata = np.array(data)
 	#init replacement data and flag chunks for replacing
-	new_block = np.zeros(data.shape)
 	repl_chunk_p1=[]
-	repl_chunk_p2=[]	
-
-
-	#print header for the first block
-	if block == 0:
-		print('Datatype: '+str(type(data[0,0,0])))
-		for line in header:
-			print(line+':  '+str(header[line]))
+	repl_chunk_p2=[]
 
 	out_rawFile.seek(headersize,1)
 
@@ -189,24 +163,6 @@ for block in range(numblocks):
 	# See the notebook drawing on pg 23
 	# FFT has already happened in the roaches
 	num_pol = data.shape[2]
-
-	print('Data shape: '+str(data.shape))
-
-	blockNumber = block
-	#save raw data
-	if rawdata:
-		#pad number to three digits
-		block = str(block)
-		if blockNumber <10:
-			block = '0'+block
-		if blockNumber <100:
-			block = '0'+block
-
-		save_fname = base+'_block'+block+'.npy'
-		np.save(save_fname,data)
-		#print('Saved under '+out_dir+save_fname)
-
-
 
 	#Check to see if SK_ints divides the total amount of data points
 	mismatch = num_timesamples % SK_ints
@@ -220,30 +176,24 @@ for block in range(numblocks):
 	SK_timebins = kept_samples/SK_ints
 	print('Leading to '+str(SK_timebins)+' SK time bins')
 
-	if mismatch != 0:
-		data = data[:,:kept_samples,:]
 
+	#kept_data = data[:,:kept_samples,:]
 
-	#Calculations
+	#replacing
 	for j in range(num_pol):
+		if j:
+			sk_arr = sk_in0
+		else:
+			sk_arr = sk_in1
 		flagged_pts=0
 		print('Polarization '+str(j))
 		for k in range(SK_timebins):
-	
-			#take the stream of correct data
-			start = k*SK_ints
-			end = (k+1)*SK_ints
-			data_chunk = data[:,start:end,j]
 
-			#square it
-			data_chunk = np.abs(data_chunk)**2#abs value and square
-
-			#perform SK
-			sk_spect = SK_EST(data_chunk,n,SK_ints)
-			#average power spectrum
-			spectrum = np.average(data_chunk,axis=1)
 			#init flag chunk
 			flag_spec = np.zeros(num_coarsechan)
+
+			#find SK spect
+			sk_spect = sk_arr[k,:]
 
 			#flag
 			for chan in range(num_coarsechan):
@@ -254,14 +204,10 @@ for block in range(numblocks):
 
 			#append to results
 			if j:
-				sk_p2.append(sk_spect)
-				spect_results_p2.append(spectrum)
 				flags_p2.append(flag_spec)
 				repl_chunk_p2.append(flag_spec)
 				flagged_pts_p2 += flagged_pts
 			else:
-				sk_p1.append(sk_spect)
-				spect_results_p1.append(spectrum)
 				flags_p1.append(flag_spec)
 				repl_chunk_p1.append(flag_spec)
 				flagged_pts_p1 += flagged_pts
@@ -272,8 +218,8 @@ for block in range(numblocks):
 
 	#need to have an array here per block, but also continue appending to the list
 	#transpose is to match the dimensions to the original data
-	repl_p1 = np.transpose(np.array(flags_p1))	
-	repl_p2 = np.transpose(np.array(flags_p2))
+	#repl_p1 = np.transpose(np.array(flags_p1))	
+	#repl_p2 = np.transpose(np.array(flags_p2))
 
 	#need to have an array here per block, but also continue appending to the list
 	#transpose is to match the dimensions to the original data
@@ -298,27 +244,8 @@ for block in range(numblocks):
 	#Write back to block
 	print('Re-formatting data and writing back to file...')
 	data = guppi_format(data)
+	print('Writing to file...')
 	out_rawFile.write(data.tostring())
-
-
-
-#save SK results
-sk_p1 = np.array(sk_p1)
-sk_p2 = np.array(sk_p2)
-print('Final results shape: '+str(sk_p1.shape))
-
-np.save(sk_npy_p1, sk_p1)
-np.save(sk_npy_p2, sk_p2)
-print('SK spectra saved in {} and {}'.format(sk_npy_p1,sk_npy_p2))
-
-
-#save spectrum results
-spect_results_p1 = np.array(spect_results_p1)
-spect_results_p2 = np.array(spect_results_p2)
-
-np.save(spect_npy_p1, spect_results_p1)
-np.save(spect_npy_p2, spect_results_p2)
-print('Spectra saved in {} and {}'.format(spect_npy_p1,spect_npy_p2))
 
 
 #save flags results
@@ -333,7 +260,7 @@ print('Flags file saved to {} and {}'.format(flags_npy_p1,flags_npy_p2))
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
-tot_points = sk_p1.size
+tot_points = flags_p1.size
 
 print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
 flagged_percent = (float(flagged_pts_p1)/tot_points)*100
@@ -352,6 +279,21 @@ elapsed = float(end_time-start_time)/60
 print('Program took {} minutes'.format(elapsed))
 
 print('Done!')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
