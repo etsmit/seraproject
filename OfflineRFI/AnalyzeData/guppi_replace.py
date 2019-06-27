@@ -1,6 +1,13 @@
 #guppi replace
 #use SK spectrum result array and a given sigma threshold to replace data on a stricter/looser basis
-#
+#INPUTS:
+#1: guppi raw file to replace
+#2: SK npy array corresponding to a certain SK_int - pol1
+#3: SK npy array corresponding to a certain SK_int - pol2
+#4: base filenames to save flags to (output raw data filename generated from input filename)
+#5: SK_ints
+#6: replacement method ('zeros', 'stats', or 'previousgood')
+#7: sigma thresholding value - default is 3.0 - corresponds to PFA of 0.0013499/1
 
 
 

@@ -3,10 +3,11 @@
 #Opens GUPPI raw file, performs SK, gibs flags, no replacement
 #Takes four inputs:
 #1: Guppi raw file
-#2: npy file to save to
-#3: True/False save raw data to block style numpy files
+#2: base filename to save to
+#3: True/False to save raw data to block style numpy files
 #4: SK_ints - number of integrations to do SK on at once - is 'M' in the formula
 #5: replacement method
+#6: sigma thresholding value - default is 3.0 - corresponds to PFA of 0.0013499/1
 
 #Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
 #Lowering SK_ints increases memory usage slightly less than linearly
@@ -84,12 +85,12 @@ n=1
 
 #filenames to save to
 #'p' stands for polarization
-sk_npy_p1 = base+'_SK_p1.npy'
-sk_npy_p2 = base+'_SK_p2.npy'
-flags_npy_p1 = base+'_flags_p1.npy'
-flags_npy_p2 = base+'_flags_p2.npy'
-spect_npy_p1 = base+'_spect_p1.npy'
-spect_npy_p2 = base+'_spect_p2.npy'
+sk_npy_p1 = base+'_SK_m'+str(SK_ints)+'_p1.npy'
+sk_npy_p2 = base+'_SK_m'+str(SK_ints)+'_p2.npy'
+flags_npy_p1 = base+'_flags_m'+str(SK_ints)+'_p1.npy'
+flags_npy_p2 = base+'_flags_m'+str(SK_ints)+'_p2.npy'
+spect_npy_p1 = base+'_spect_m'+str(SK_ints)+'_p1.npy'
+spect_npy_p2 = base+'_spect_m'+str(SK_ints)+'_p2.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
