@@ -244,7 +244,7 @@ for block in range(numblocks):
 			#average power spectrum
 			spectrum = np.average(data_chunk,axis=1)
 			#init flag chunk
-			flag_spec = np.zeros(num_coarsechan)
+			flag_spec = np.zeros(num_coarsechan,dtype=np.int8)
 
 			#flag
 			for chan in range(num_coarsechan):
@@ -271,15 +271,14 @@ for block in range(numblocks):
 	print('Calculations complete...')
 	print('Replacing Data...')
 
-	#need to have an array here per block, but also continue appending to the list
-	#transpose is to match the dimensions to the original data
-	repl_p1 = np.transpose(np.array(flags_p1))	
-	repl_p2 = np.transpose(np.array(flags_p2))
 
 	#need to have an array here per block, but also continue appending to the list
 	#transpose is to match the dimensions to the original data
 	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
 	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
+
+	print('Datashape: {}'.format(data.shape))
+	print('Flag shape: {}'.format(repl_chunk_p1.shape))
 
 	if method == 'zeros':
 		#replace data with zeros

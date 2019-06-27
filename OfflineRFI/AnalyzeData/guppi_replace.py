@@ -1,7 +1,7 @@
 #guppi replace
 #use SK spectrum result array and a given sigma threshold to replace data on a stricter/looser basis
 #INPUTS:
-#1: guppi raw file to replace
+#1: guppi raw file to replace data in
 #2: SK npy array corresponding to a certain SK_int - pol1
 #3: SK npy array corresponding to a certain SK_int - pol2
 #4: base filenames to save flags to (output raw data filename generated from input filename)
@@ -197,7 +197,7 @@ for block in range(numblocks):
 		for k in range(SK_timebins):
 
 			#init flag chunk
-			flag_spec = np.zeros(num_coarsechan)
+			flag_spec = np.zeros(num_coarsechan,dtype=np.int8)
 
 			#find SK spect
 			sk_spect = sk_arr[k,:]

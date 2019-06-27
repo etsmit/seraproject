@@ -25,37 +25,38 @@ import scipy.special
 #---------------------------------------------------------
 # Functions pertaining specifically to performing SK
 #---------------------------------------------------------
+
+#Compute SK on a 2D array of power values
+#a=2D power spectra - shape = (bandwidth,ints)
+#n should be equal to 1
+#m=ints to use (from beginning of a) - SK_ints
 def SK_EST(a,n,m):
-	#a=2D power spectra - shape = (bandwidth,ints)
-	#n should be equal to 1                       
-	#m=ints to use (from beginning of a)          
-	nchans=a.shape[0]                             
-	d=1#shape parameter(expect 1)                                       
-	#print('Nchans: ',nchans)                      
-	#print('M: ',m)                                                                
-	#print('d: ',d)                                
+
+	nchans=a.shape[0]
+	d=1#shape parameter(expect 1)
 	#make s1 and s2 as defined by whiteboard (by 2010b Nita paper)
-	#s2 definition will probably throw error if n does not integer divide m
-	sum1=np.sum(a[:,:m],axis=1)                                            
-	a2=a**2                                                                
+	sum1=np.sum(a[:,:m],axis=1)
+	a2=a**2
 	sum2=np.sum(a2[:,:m],axis=1)                                           
 	#s2=sum(np.sum(a[chan,:].reshape(-1,n)**2,axis=1))#Use in case of n != 1
 	sk_est = ((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)                     
 	return sk_est
 
 
+#helps calculate upper SK threshold
 def upperRoot(x, moment_2, moment_3, p):
-	#helps calculate upper SK threshold
 	upper = np.abs( (1 - sp.special.gammainc( (4 * moment_2**3)/moment_3**2, (-(moment_3-2*moment_2**2)/moment_3 + x)/(moment_3/2/moment_2)))-p)
 	return upper
 
+#helps calculate lower SK threshold
 def lowerRoot(x, moment_2, moment_3, p):
-	#helps calculate lower SK threshold
 	lower = np.abs(sp.special.gammainc( (4 * moment_2**3)/moment_3**2, (-(moment_3-2*moment_2**2)/moment_3 + x)/(moment_3/2/moment_2))-p)
 	return lower
 
+#fully calculates upper and lower thresholds
+#M = SK_ints
+#default p = PFA = 0.0013499 corresponds to 3sigma excision
 def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
-	#fully calculates upper and lower thresholds
 	Nd = N * d
 	#Statistical moments
 	moment_1 = 1
@@ -77,21 +78,6 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 	return lowerThreshold, upperThreshold
 
 
-#---------------------------------------------------------
-# Function for fixing offset at beginning of blocks
-#---------------------------------------------------------
-
-#takes all the rows down to where the shift ends, and shifts them to the left to match the rest of the file
-#last chan doesn't get shifted - so the last two coarse chans are duplicates
-def offset_Fix(data_block,blocknum,offset_amt):
-	shift_end = offset_amt*(1+blocknum)
-	nchan = data_block.shape[0]
-
-	for i in range(2):
-		for chan in range(nchan-1):
-			data_block[chan,:shift_end,i] = data_block[chan+1,:shift_end,i]
-	return data_block
-
 
 
 #---------------------------------------------------------
@@ -99,12 +85,16 @@ def offset_Fix(data_block,blocknum,offset_amt):
 #---------------------------------------------------------
 #meant to be used inline inside guppi_SK_fromraw.py with numpy arrays
 
-#a is the input array, f is flags array, x is SK_ints
+#INPUTS:
+#a is the input array
+#f is flags array
+#x is SK_ints
 
+#First, some supporting functions:
 
+#expand small flags file (flag_chunk in guppi_SK_fromraw.py) to size of original block
+#not currently used
 def expand_flags(f,x):
-	#expand small flags file (flag_chunk in guppi_SK_fromraw.py) to size of original block
-	#not currently used
 	out_f = np.zeros((f.shape[0],f.shape[1]*x,f.shape[2]))
 	for i in range(f.shape[0]):
 		for j in range(f.shape[1]):
@@ -112,34 +102,31 @@ def expand_flags(f,x):
 				out_f[i,j*x:(j+1)*x,k] = f[i,j,k]
 	return out_f
 
+#checks replacement method inputted at top
 def method_check(s):
-	#checks replacement method
 	if s in ['zeros','previousgood','stats']:
 		return True
 	else:
 		return False
 
+#flatten data array 'a' into format writeable to guppi file
 def guppi_format(a):
-	#flatten data array 'a' into format writeable to guppi file
-	print('Creating new array...')
-	#out_arr = np.zeros((a.shape[0],a.shape[1],a.shape[2]*2))
-	print('Writing to it...')
 	out_arr = a.view(np.float32)
-	#out_arr[:,:,::2] = a.real
-	#out_arr[:,:,1::2] = a.imag
 	print('Flattening...')
 	out_arr = out_arr.ravel()
-	print('Re-formatting...')
+	print('Re-formatting...')#this is slow because view won't translate 32bit to 8bit
 	out_arr = out_arr.astype(np.int8)
 	return out_arr
+
+
 
 #Next, pick a replacement method.
 
 	
 #replace all the flagged data points with zeros. Not ideal scientifically.
-def repl_zeros(a,f,x,p):
+#TODO: needs vectorization
+def repl_zeros(a,f,x):
 	out_arr = np.array(a)
-	print('Replacing pol{} flagged data with zeros'.format(p))
 	for i in range(f.shape[0]):
 		for j in range(f.shape[1]):
 			if f[i,j] == 1:
@@ -151,12 +138,8 @@ def repl_zeros(a,f,x,p):
 
 
 #replace with previous good data (or future good)
-def previous_good(a,f,x,p):
-	# f is the smaller flags array - flag_chunk in guppi_SK_fromraw.py
-	#x is the amount of data needed (should be SK_ints) 
-
+def previous_good(a,f,x):
 	out_arr = np.array(a)
-	print('Replacing pol{} flagged data with previous good data'.format(p))
 	for i in range(f.shape[0]):
 		#print('Coarse Chan '+str(i))
 		for j in range(f.shape[1]):
@@ -195,7 +178,8 @@ def previous_good(a,f,x,p):
 
 
 
-#replace with statistical noise
+#supports statistical_noise function
+#i = coarse channel of interest
 def gen_good_data(a,f,x,i):
 	good_data = []
 	#print('Coarse Chan '+str(i))
@@ -208,14 +192,8 @@ def gen_good_data(a,f,x,i):
 	return good_data
 
 
-
-def statistical_noise(a,f,x,p):
-	#x is the amount of data needed (bad_datarange from 3D_overlayflags)
- 	#out_arr = np.array(a)
-	print('Replacing Pol{} data with statistical noise'.format(p))
-	#print(a.shape)
-	#print(f.shape)
-	#print(x)
+#replace with statistical noise
+def statistical_noise(a,f,x):
 	for i in range(f.shape[0]):
 		#print('coarsechan {}'.format(i))
 		good_data = gen_good_data(a,f,x,i)
@@ -224,6 +202,7 @@ def statistical_noise(a,f,x,p):
 
 		if len(good_data) == 0:
 			print('****No good data in channel {}****'.format(i))
+			#-next line replaces data-
 			a = adj_chan(a,f,i,x)
 		elif len(good_data) < (2*x+1):
 			print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
@@ -235,13 +214,15 @@ def statistical_noise(a,f,x,p):
 			for y in range(f.shape[1]):
 				if f[i,y] == 1:
 					#science
-					#print(y)
 					repl_chunk.real = np.random.normal(ave_real,std_real,x)
 					repl_chunk.imag = np.random.normal(ave_imag,std_imag,x)
 					a[i,y*x:(y+1)*x] = repl_chunk
 
 	return a
 
+#alternate statistical noise generator if entire channel is flagged
+#for the length of the block
+#pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
 def adj_chan(a,f,c,x):
 	#replace a bad channel 'c' with stat. noise derived from adjacent channels
 	out_arr = np.array(a)
