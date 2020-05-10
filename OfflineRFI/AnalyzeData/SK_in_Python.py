@@ -21,6 +21,8 @@ import scipy as sp
 import scipy.optimize
 import scipy.special
 
+from numba import jit
+
 
 #---------------------------------------------------------
 # Functions pertaining specifically to performing SK
@@ -31,14 +33,12 @@ import scipy.special
 #n should be equal to 1
 #m=ints to use (from beginning of a) - SK_ints
 def SK_EST(a,n,m):
-
-	nchans=a.shape[0]
 	d=1#shape parameter(expect 1)
 	#make s1 and s2 as defined by whiteboard (by 2010b Nita paper)
-	sum1=np.sum(a[:,:m],axis=1)
+	a = a[:,:m]*n
+	sum1=np.sum(a,axis=1)
 	a2=a**2
-	sum2=np.sum(a2[:,:m],axis=1)                                           
-	#s2=sum(np.sum(a[chan,:].reshape(-1,n)**2,axis=1))#Use in case of n != 1
+	sum2=np.sum(a2,axis=1)
 	sk_est = ((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)                     
 	return sk_est
 
@@ -110,11 +110,10 @@ def method_check(s):
 		return False
 
 #flatten data array 'a' into format writeable to guppi file
+@jit
 def guppi_format(a):
 	out_arr = a.view(np.float32)
-	print('Flattening...')
-	out_arr = out_arr.ravel()
-	print('Re-formatting...')#this is slow because view won't translate 32bit to 8bit
+	out_arr = out_arr.ravel()#this is slow because view won't translate 32bit to 8bit
 	out_arr = out_arr.astype(np.int8)
 	return out_arr
 
@@ -125,6 +124,7 @@ def guppi_format(a):
 	
 #replace all the flagged data points with zeros. Not ideal scientifically.
 #TODO: needs vectorization
+#@jit(nopython=True)
 def repl_zeros(a,f,x):
 	out_arr = np.array(a)
 	for i in range(f.shape[0]):
@@ -138,6 +138,7 @@ def repl_zeros(a,f,x):
 
 
 #replace with previous good data (or future good)
+@jit
 def previous_good(a,f,x):
 	out_arr = np.array(a)
 	for i in range(f.shape[0]):
@@ -180,6 +181,7 @@ def previous_good(a,f,x):
 
 #supports statistical_noise function
 #i = coarse channel of interest
+@jit
 def gen_good_data(a,f,x,i):
 	good_data = []
 	#print('Coarse Chan '+str(i))
@@ -193,6 +195,7 @@ def gen_good_data(a,f,x,i):
 
 
 #replace with statistical noise
+@jit
 def statistical_noise(a,f,x):
 	for i in range(f.shape[0]):
 		#print('coarsechan {}'.format(i))
@@ -223,6 +226,7 @@ def statistical_noise(a,f,x):
 #alternate statistical noise generator if entire channel is flagged
 #for the length of the block
 #pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
+@jit
 def adj_chan(a,f,c,x):
 	#replace a bad channel 'c' with stat. noise derived from adjacent channels
 	out_arr = np.array(a)
@@ -246,6 +250,40 @@ def adj_chan(a,f,c,x):
 	out_arr[c,:].imag = np.random.normal(ave_imag,std_imag,out_arr.shape[1])
 	
 	return out_arr
+
+
+
+
+#---------------------------------------------------------
+# Functions pertaining to MultiScale SK
+#---------------------------------------------------------
+
+#Compute SK on a 2D array of power values
+#s1 = s1 2D array
+#s2 = s2 2D array
+#n should be equal to 1
+#ms_m, ms_n from MS shape
+#def MS_SK_EST(s1,s2,n,ms_m,ms_n):
+#
+#	nchans=a.shape[0]
+#	d=1#shape parameter(expect 1)
+#	#make s1 and s2 as defined by whiteboard (by 2010b Nita paper)
+#	sum1=
+#	sum2=                                           
+	#s2=sum(np.sum(a[chan,:].reshape(-1,n)**2,axis=1))#Use in case of n != 1
+#	sk_est = ((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)                     
+#	return sk_est
+
+
+
+
+
+
+
+
+
+
+
 
 
 
