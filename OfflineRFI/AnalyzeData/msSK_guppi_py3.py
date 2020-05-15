@@ -14,6 +14,9 @@
 #Lowering SK_ints increases memory usage slightly less than linearly
 #Assumes two polarizations
 #see SK_in_Python.py for functions used
+
+
+#whenever you see 'ms', it means 'multiscale'
 #--------------------------------------------------
 
 
@@ -79,6 +82,8 @@ parser.add_argument('-v',dest='vegas_dir',type=str,default='0',help='If inputtin
 
 parser.add_argument('-newfile',dest='output_bool',type=bool,default=False,help='Copy the original data and output a replaced datafile. Default True. Change to False to not write out a whole new GUPPI file')
 
+parser.add_argument('-ms',dest='ms',type=str,default='11',help='Multiscale SK shape. In the form of "mn" for extra time and frequency bins respectively, ex. "12" for no extension in time and one bin extension in frequency.')
+
 
 #parse input variables
 args = parser.parse_args()
@@ -89,11 +94,13 @@ rawdata = args.rawdata
 sigma = args.sigma
 n = args.n
 v_s = args.vegas_dir[0]
-print(v_s)
 if v_s != '0':
 	v_b = args.vegas_dir[1]
 	in_dir = in_dir+'vegas/AGBT19B_335_0'+v_s+'/VEGAS/'+v_b+'/'
 output_bool = args.output_bool
+ms = args.ms
+ms_m = int(ms[0])
+ms_n = int(ms[1])
 
  
 
@@ -117,12 +124,12 @@ base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-sk_npy_p1 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-sk_npy_p2 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
-flags_npy_p1 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-flags_npy_p2 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
-spect_npy_p1 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-spect_npy_p2 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
+sk_npy_p1 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p1.npy'
+sk_npy_p2 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p2.npy'
+flags_npy_p1 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p1.npy'
+flags_npy_p2 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p2.npy'
+spect_npy_p1 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p1.npy'
+spect_npy_p2 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_ms'+ms+'_p2.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -154,7 +161,7 @@ if rawdata:
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(sigma)+infile[-4:]
+outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(sigma)+'_ms'+ms+infile[-4:]
 
 
 
@@ -165,7 +172,10 @@ outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(
 
 start_time = time.time()
 
-
+#first check that ms_n != 2 or 4
+if (ms_n==3) or (ms_n==5):
+	print('Error: ms_n is incompatible with 2^N frequency channels. Please pick 0 or 1. Exiting...')
+	exit()
 
 #os.system('rm '+outfile)
 if output_bool:
@@ -248,48 +258,105 @@ for block in range(numblocks):
 	if mismatch != 0:
 		data = data[:,:kept_samples,:]
 
+	block_flags_bothpol = np.zeros((num_coarsechan,SK_ints),dtype=np.uint8)
 
+	#----------------------------------------------------------
 	#Calculations
-	for j in range(num_pol):
+	for pol in range(num_pol):
 		flagged_pts=0
 		#print('Polarization '+str(j))
-		for k in range(SK_timebins):
+
+		ms_time_bins = SK_timebins//ms_m
+		ms_freq_bins = num_coarsechan//ms_n
+
+		#init S1 and S2
+		sum1 = np.zeros((ms_freq_bins,ms_time_bins))
+		sum2 = np.zeros((ms_freq_bins,ms_time_bins))
+
+
+		block_SK=np.zeros((num_coarsechan,SK_ints),dtype=np.float32)
+		block_spect=np.zeros((num_coarsechan,SK_ints),dtype=np.float64)
+		block_flags=np.zeros((num_coarsechan,SK_ints),dtype=np.uint8)
+
+		#cycle through macrobins
+		#i and k indices to match the paper (Gary et al PASP 2010)
+		for k in range(ms_freq_bins):#freq
+			for i in range(ms_time_bins):#time
 	
-			#take the stream of correct data
-			start = k*SK_ints
-			end = (k+1)*SK_ints
-			data_chunk = data[:,start:end,j]
+				#define the microbins inside our ms macrobin
+				#TODO is possible without list (np.c_)
+				ms_microbins = []
 
-			#square it
-			data_chunk = np.abs(data_chunk)**2#abs value and square
+				for timebin in range(ms_m):
+					for chan in range(ms_n):
+						start = (i*ms_m+timebin)*SK_ints
+						end = (i*ms_m+timebin+1)*SK_ints
+						data_chunk = data[k*ms_m+chan,start:end,pol]
 
-			#perform SK
-			sk_spect = SK_EST(data_chunk,n,SK_ints)
-			#average power spectrum
-			spectrum = np.average(data_chunk,axis=1)
-			#init flag chunk
-			flag_spec = np.zeros(num_coarsechan,dtype=np.int8)
 
-			#flag
-			for chan in range(num_coarsechan):
-				#is the datapoint outside the threshold?
-				if (sk_spect[chan] < lt) or (sk_spect[chan] > ut):
-					flag_spec[chan] = 1
-					flagged_pts += 1		
+						
+						#square it
+						data_chunk = np.abs(data_chunk)**2
+						ms_microbins.append(data_chunk)
+
+						#average power spectrum
+						block_spect[k*ms_m+chan,i+timebin]= np.average(data_chunk)
+				
+				ms_S1=0
+				ms_S2=0
+
+				for msbin in ms_microbins:
+					ms_S1 += np.sum(msbin)
+					ms_S2 += np.sum(msbin**2)
+					#print(ms_S1,ms_S2)
+
+				sum1[k,i] = ms_S1
+				sum2[k,i] = ms_S2
+
+		#compute SK of whole block in one go
+		macro_SK = ms_SK_EST(sum1,sum2,SK_ints)
+
+
+		for k in range(ms_freq_bins):#freq
+			for i in range(ms_time_bins):#time
+
+				#assign SK values
+				block_SK[k*ms_n:(k+1)*ms_n,i*ms_m:(i+1)*ms_m] = macro_SK[k,i]
+
+
+		#flag the whole block in one go
+		block_flags[block_SK<lt] = 1
+		block_flags[block_SK>ut] = 1
+
+		
 
 			#append to results
-			if j:
-				sk_p2.append(sk_spect)
-				spect_results_p2.append(spectrum)
-				flags_p2.append(flag_spec)
-				repl_chunk_p2.append(flag_spec)
-				flagged_pts_p2 += flagged_pts
+		if (block==0):
+			if pol:
+				sk_p2=block_SK
+				spect_results_p2=block_spect
+				flags_p2 = block_flags
+				block_flags_bothpol[block_flags==1] = 1
 			else:
-				sk_p1.append(sk_spect)
-				spect_results_p1.append(spectrum)
-				flags_p1.append(flag_spec)
-				repl_chunk_p1.append(flag_spec)
-				flagged_pts_p1 += flagged_pts
+				sk_p1=block_SK
+				spect_results_p1=block_spect
+				flags_p1 = block_flags
+				block_flags_bothpol[block_flags==1] = 1
+
+		if (block==1):
+			if pol:
+				sk_p2=np.c_[sk_p2,block_SK]
+				spect_results_p2=np.c_[spect_results_p2,block_spect]
+				flags_p2 = np.c_[flags_p2,block_flags]
+				block_flags_bothpol[block_flags==1] = 1
+			else:
+				sk_p1=np.c_[sk_p1,block_SK]
+				spect_results_p1=np.c_[spect_results_p1,block_spect]
+				flags_p1 = np.c_[flags_p1,block_flags]
+				block_flags_bothpol[block_flags==1] = 1
+
+
+
 
 	#Replace data
 	print('Calculations complete...')
@@ -301,10 +368,10 @@ for block in range(numblocks):
 	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
 	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
 
-	if method == 'zeros':
+	#if method == 'zeros':
 		#replace data with zeros
-		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
+		#data[:,:,0] = repl_zeros(data[:,:,0],block_flags_bothpol)
+		#data[:,:,1] = repl_zeros(data[:,:,1],block_flags_bothpol)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good

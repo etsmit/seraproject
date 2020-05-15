@@ -42,6 +42,19 @@ def SK_EST(a,n,m):
 	sk_est = ((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)                     
 	return sk_est
 
+#multiscale variant
+#only takes n=1 for now
+#takes sum1 and sum2 as arguments rather than computing inside
+def ms_SK_EST(s1,s2,m):
+	n=1
+	d=1
+	#print((m*s2))
+	#print(s1**2)
+	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1**2))-1)
+	return sk_est
+
+
+
 
 #helps calculate upper SK threshold
 def upperRoot(x, moment_2, moment_3, p):
@@ -125,14 +138,9 @@ def guppi_format(a):
 #replace all the flagged data points with zeros. Not ideal scientifically.
 #TODO: needs vectorization
 #@jit(nopython=True)
-def repl_zeros(a,f,x):
-	out_arr = np.array(a)
-	for i in range(f.shape[0]):
-		for j in range(f.shape[1]):
-			if f[i,j] == 1:
-				out_arr[i,j*x:(j+1)*x] = np.float64(0.0)
-	
-	return out_arr
+def repl_zeros(a,f):
+	a[f==1]==np.float64(0)
+	return a
 
 
 
