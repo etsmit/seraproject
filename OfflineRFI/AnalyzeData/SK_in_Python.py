@@ -32,13 +32,12 @@ from numba import jit
 #a=2D power spectra - shape = (bandwidth,ints)
 #n should be equal to 1
 #m=ints to use (from beginning of a) - SK_ints
-def SK_EST(a,n,m):
-	d=1#shape parameter(expect 1)
+def SK_EST(a,n,m,d):
+	#d=1#shape parameter(expect 1)
 	#make s1 and s2 as defined by whiteboard (by 2010b Nita paper)
 	a = a[:,:m]*n
 	sum1=np.sum(a,axis=1)
-	a2=a**2
-	sum2=np.sum(a2,axis=1)
+	sum2=np.sum(a**2,axis=1)
 	sk_est = ((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)                     
 	return sk_est
 
@@ -138,7 +137,13 @@ def guppi_format(a):
 #replace all the flagged data points with zeros. Not ideal scientifically.
 #TODO: needs vectorization
 #@jit(nopython=True)
-def repl_zeros(a,f):
+#this is for non-ms implementation
+def repl_zeros(a,f,x):
+	out_arr = np.array(a)
+	for i in range(f.shape[0]):
+		for j in range(f.shape[1])
+			if f[i,j]==1:
+				out_arr[i,j*x:(j+1)*x] = np.float64(1e-6)
 	a[f==1]==np.float64(0)
 	return a
 

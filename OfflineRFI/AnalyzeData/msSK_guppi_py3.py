@@ -269,11 +269,12 @@ for block in range(numblocks):
 		ms_time_bins = SK_timebins//ms_m
 		ms_freq_bins = num_coarsechan//ms_n
 
-		#init S1 and S2
+		#init S1 and S2 on macroscale
 		sum1 = np.zeros((ms_freq_bins,ms_time_bins))
 		sum2 = np.zeros((ms_freq_bins,ms_time_bins))
 
 
+		#define regular-sized output arrays
 		block_SK=np.zeros((num_coarsechan,SK_ints),dtype=np.float32)
 		block_spect=np.zeros((num_coarsechan,SK_ints),dtype=np.float64)
 		block_flags=np.zeros((num_coarsechan,SK_ints),dtype=np.uint8)
@@ -283,10 +284,7 @@ for block in range(numblocks):
 		for k in range(ms_freq_bins):#freq
 			for i in range(ms_time_bins):#time
 	
-				#define the microbins inside our ms macrobin
-				#TODO is possible without list (np.c_)
-				ms_microbins = []
-
+				#cycle through microbins
 				for timebin in range(ms_m):
 					for chan in range(ms_n):
 						start = (i*ms_m+timebin)*SK_ints
@@ -297,30 +295,32 @@ for block in range(numblocks):
 						
 						#square it
 						data_chunk = np.abs(data_chunk)**2
-						ms_microbins.append(data_chunk)
+
+						if (timebin==0) and (chan==0):
+							ms_microbins = data_chunk
+						else:
+							ms_microbins = np.c_[ms_microbins,data_chunk]
 
 						#average power spectrum
 						block_spect[k*ms_m+chan,i+timebin]= np.average(data_chunk)
 				
-				ms_S1=0
-				ms_S2=0
 
-				for msbin in ms_microbins:
-					ms_S1 += np.sum(msbin)
-					ms_S2 += np.sum(msbin**2)
-					#print(ms_S1,ms_S2)
+				ms_S1 = np.sum(ms_microbins)
+				ms_S2 = np.sum(ms_microbins**2)
+
 
 				sum1[k,i] = ms_S1
 				sum2[k,i] = ms_S2
 
 		#compute SK of whole block in one go
+		#macro_SK has 
 		macro_SK = ms_SK_EST(sum1,sum2,SK_ints)
 
 
 		for k in range(ms_freq_bins):#freq
 			for i in range(ms_time_bins):#time
 
-				#assign SK values
+				#assign SK values in normal-sized block_SK
 				block_SK[k*ms_n:(k+1)*ms_n,i*ms_m:(i+1)*ms_m] = macro_SK[k,i]
 
 
@@ -330,7 +330,8 @@ for block in range(numblocks):
 
 		
 
-			#append to results
+		#append to results
+		#flags from both polarizations are applied to both polarizations
 		if (block==0):
 			if pol:
 				sk_p2=block_SK
@@ -424,11 +425,11 @@ print('Lower Threshold: '+str(lt))
 
 tot_points = sk_p1.size
 
-print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
+#print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
 flagged_percent = (float(np.count_nonzero(flags_p1))/tot_points)*100
 print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
 
-print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
+#print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
 flagged_percent = (float(np.count_nonzero(flags_p2))/tot_points)*100
 print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
 

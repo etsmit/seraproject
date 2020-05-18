@@ -76,8 +76,12 @@ parser.add_argument('-n',dest='n',type=int,default=1,help='Integer. Number of in
 #vegas file? needs new data directory and session
 parser.add_argument('-v',dest='vegas_dir',type=str,default='0',help='If inputting a VEGAS file, enter AGBT19B_335 session number (1/2) and bank (C/D) ex "1D".')
 
-
+#write out a whole new raw file or just get SK/accumulated spectra results
 parser.add_argument('-newfile',dest='output_bool',type=bool,default=False,help='Copy the original data and output a replaced datafile. Default True. Change to False to not write out a whole new GUPPI file')
+
+#pick d in the case that it isn't 1. Required for low-bit quantization.
+#Can be found (i think) by running SK and changing d to be 1/x, where x is the center of the SK value distribution.
+parser.add_argument('-d',dest='d',type=float,default=1.,help='Float. Shape parameter d. Default 1, but is different in the case of low-bit quantization. Can be found (i think) by running SK and changing d to be 1/x, where x is the center of the SK value distribution.')
 
 
 #parse input variables
@@ -94,7 +98,7 @@ if v_s != '0':
 	v_b = args.vegas_dir[1]
 	in_dir = in_dir+'vegas/AGBT19B_335_0'+v_s+'/VEGAS/'+v_b+'/'
 output_bool = args.output_bool
-
+d = args.d
  
 
 
@@ -131,7 +135,7 @@ print('Probability of false alarm: {}'.format(SK_p))
 
 #calculate thresholds
 print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_ints, N = n, d = 1, p = SK_p)
+lt, ut = SK_thresholds(SK_ints, N = n, d = d, p = SK_p)
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
@@ -264,7 +268,7 @@ for block in range(numblocks):
 			data_chunk = np.abs(data_chunk)**2#abs value and square
 
 			#perform SK
-			sk_spect = SK_EST(data_chunk,n,SK_ints)
+			sk_spect = SK_EST(data_chunk,n,SK_ints,d)
 			#average power spectrum
 			spectrum = np.average(data_chunk,axis=1)
 			#init flag chunk
@@ -301,10 +305,10 @@ for block in range(numblocks):
 	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
 	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
 
-	if method == 'zeros':
+	#if method == 'zeros':
 		#replace data with zeros
-		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
+		#data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
+		#data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
