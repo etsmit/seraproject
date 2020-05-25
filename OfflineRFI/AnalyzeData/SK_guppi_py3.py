@@ -140,18 +140,6 @@ print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
 
-#array to hold SK results
-sk_p1=[]
-sk_p2=[]
-
-#array to hold spectrum results
-spect_results_p1 = []
-spect_results_p2 = []
-
-#array to hold flagging results
-flags_p1 = []
-flags_p2 = []
-
 
 if rawdata:
 	print('Saving raw data to npy block style files')
@@ -282,18 +270,32 @@ for block in range(numblocks):
 					flagged_pts += 1		
 
 			#append to results
-			if j:
-				sk_p2.append(sk_spect)
-				spect_results_p2.append(spectrum)
-				flags_p2.append(flag_spec)
-				repl_chunk_p2.append(flag_spec)
-				flagged_pts_p2 += flagged_pts
+			if (block==0):
+				if j:
+					sk_p2 = sk_spect
+					spect_results_p2 = spectrum
+					flags_p2 = flag_spec
+					repl_chunk_p2.append(flag_spec)
+				else:
+					sk_p1 = sk_spect
+					spect_results_p1 = spectrum
+					flags_p1 = flag_spec
+					repl_chunk_p1.append(flag_spec)
 			else:
-				sk_p1.append(sk_spect)
-				spect_results_p1.append(spectrum)
-				flags_p1.append(flag_spec)
-				repl_chunk_p1.append(flag_spec)
-				flagged_pts_p1 += flagged_pts
+				if j:
+					sk_p2 = np.c_[sk_p2,sk_spect]
+					spect_results_p2 = np.c_[spect_results_p2,spectrum]
+					flags_p2 = np.c_[flags_p2,flag_spec]
+					repl_chunk_p2.append(flag_spec)
+				else:
+					sk_p1 = np.c_[sk_p1,sk_spect]
+					spect_results_p1 = np.c_[spect_results_p1,spectrum]
+					flags_p1 = np.c_[flags_p1,flag_spec]
+					repl_chunk_p1.append(flag_spec)
+
+
+
+
 
 	#Replace data
 	print('Calculations complete...')
@@ -305,10 +307,10 @@ for block in range(numblocks):
 	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
 	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
 
-	#if method == 'zeros':
+	if method == 'zeros':
 		#replace data with zeros
-		#data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
-		#data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
+		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
+		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
@@ -360,13 +362,15 @@ print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
 tot_points = sk_p1.size
+flagged_pts_p1 = np.count_nonzero(flags_p1)
+flagged_pts_p2 = np.count_nonzero(flags_p2)
 
 print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(np.count_nonzero(flags_p1))/tot_points)*100
+flagged_percent = (float(flagged_pts_p1)/tot_points)*100
 print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
 
 print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(np.count_nonzero(flags_p2))/tot_points)*100
+flagged_percent = (float(flagged_pts_p2)/tot_points)*100
 print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
 
 print('Saved replaced data to '+outfile)

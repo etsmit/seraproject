@@ -174,7 +174,7 @@ start_time = time.time()
 
 #first check that ms_n != 2 or 4
 if (ms_n==3) or (ms_n==5):
-	print('Error: ms_n is incompatible with 2^N frequency channels. Please pick 0 or 1. Exiting...')
+	print('Error: ms_n is incompatible with 2^N frequency channels. Please pick 1 or 2. Exiting...')
 	exit()
 
 #os.system('rm '+outfile)
@@ -258,7 +258,7 @@ for block in range(numblocks):
 	if mismatch != 0:
 		data = data[:,:kept_samples,:]
 
-	block_flags_bothpol = np.zeros((num_coarsechan,SK_ints),dtype=np.uint8)
+	block_flags_bothpol = np.zeros((num_coarsechan,SK_timebins),dtype=np.uint8)
 
 	#----------------------------------------------------------
 	#Calculations
@@ -272,12 +272,14 @@ for block in range(numblocks):
 		#init S1 and S2 on macroscale
 		sum1 = np.zeros((ms_freq_bins,ms_time_bins))
 		sum2 = np.zeros((ms_freq_bins,ms_time_bins))
+		print('ms_freq_bins: {} , ms_time_bins: {}'.format(ms_freq_bins,ms_time_bins))
 
 
 		#define regular-sized output arrays
-		block_SK=np.zeros((num_coarsechan,SK_ints),dtype=np.float32)
-		block_spect=np.zeros((num_coarsechan,SK_ints),dtype=np.float64)
-		block_flags=np.zeros((num_coarsechan,SK_ints),dtype=np.uint8)
+		block_SK=np.zeros((num_coarsechan,SK_timebins),dtype=np.float32)
+		block_spect=np.zeros((num_coarsechan,SK_timebins),dtype=np.float64)
+		block_flags=np.zeros((num_coarsechan,SK_timebins),dtype=np.uint8)
+		print(block_spect.shape)
 
 		#cycle through macrobins
 		#i and k indices to match the paper (Gary et al PASP 2010)
@@ -289,12 +291,18 @@ for block in range(numblocks):
 					for chan in range(ms_n):
 						start = (i*ms_m+timebin)*SK_ints
 						end = (i*ms_m+timebin+1)*SK_ints
-						data_chunk = data[k*ms_m+chan,start:end,pol]
+
+						#data_chunk is a set of m channelized voltages in one freq channel
+						data_chunk = data[k*ms_n+chan,start:end,pol]
+
+						
 
 
 						
 						#square it
 						data_chunk = np.abs(data_chunk)**2
+
+						
 
 						if (timebin==0) and (chan==0):
 							ms_microbins = data_chunk
@@ -302,15 +310,18 @@ for block in range(numblocks):
 							ms_microbins = np.c_[ms_microbins,data_chunk]
 
 						#average power spectrum
-						block_spect[k*ms_m+chan,i+timebin]= np.average(data_chunk)
+						block_spect[k*ms_n+chan,i*ms_m+timebin]= np.average(data_chunk)
+						
 				
 
-				ms_S1 = np.sum(ms_microbins)
+				#S1^2 here
+				ms_S1_2 = np.sum(np.sum(ms_microbins,axis=0)**2)
 				ms_S2 = np.sum(ms_microbins**2)
 
 
-				sum1[k,i] = ms_S1
+				sum1[k,i] = ms_S1_2
 				sum2[k,i] = ms_S2
+				#print(sum1.shape)
 
 		#compute SK of whole block in one go
 		#macro_SK has 
@@ -344,7 +355,7 @@ for block in range(numblocks):
 				flags_p1 = block_flags
 				block_flags_bothpol[block_flags==1] = 1
 
-		if (block==1):
+		else:
 			if pol:
 				sk_p2=np.c_[sk_p2,block_SK]
 				spect_results_p2=np.c_[spect_results_p2,block_spect]

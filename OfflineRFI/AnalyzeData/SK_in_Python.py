@@ -49,7 +49,7 @@ def ms_SK_EST(s1,s2,m):
 	d=1
 	#print((m*s2))
 	#print(s1**2)
-	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1**2))-1)
+	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1))-1)
 	return sk_est
 
 
@@ -141,10 +141,10 @@ def guppi_format(a):
 def repl_zeros(a,f,x):
 	out_arr = np.array(a)
 	for i in range(f.shape[0]):
-		for j in range(f.shape[1])
+		for j in range(f.shape[1]):
 			if f[i,j]==1:
 				out_arr[i,j*x:(j+1)*x] = np.float64(1e-6)
-	a[f==1]==np.float64(0)
+	#a[f==1]==np.float64(0)
 	return a
 
 
