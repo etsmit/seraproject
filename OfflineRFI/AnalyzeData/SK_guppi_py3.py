@@ -121,12 +121,9 @@ base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-sk_npy_p1 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-sk_npy_p2 = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
-flags_npy_p1 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-flags_npy_p2 = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
-spect_npy_p1 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p1.npy'
-spect_npy_p2 = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_p2.npy'
+sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'.npy'
+flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'.npy'
+spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -176,8 +173,6 @@ print('Loading copy...')
 numblocks = rawFile.find_n_data_blocks()
 print('File has '+str(numblocks)+' data blocks')
 
-flagged_pts_p1=0
-flagged_pts_p2=0
 
 
 for block in range(numblocks):
@@ -189,10 +184,7 @@ for block in range(numblocks):
 	header,data = rawFile.read_next_data_block()
 
 
-	#init replacement data and flag chunks for replacing
-	new_block = np.zeros(data.shape)
-	repl_chunk_p1=[]
-	repl_chunk_p2=[]	
+	
 
 
 	#print header for the first block
@@ -213,7 +205,6 @@ for block in range(numblocks):
 
 	print('Data shape: '+str(data.shape))
 
-	blockNumber = block
 	#save raw data
 	if rawdata:
 		#pad number to three digits
@@ -242,85 +233,84 @@ for block in range(numblocks):
 
 
 	#Calculations
-	for j in range(num_pol):
-		flagged_pts=0
-		#print('Polarization '+str(j))
-		for k in range(SK_timebins):
+
+	#ASSUMING NPOL = 2:
+
+	for k in range(SK_timebins):
 	
-			#take the stream of correct data
-			start = k*SK_ints
-			end = (k+1)*SK_ints
-			data_chunk = data[:,start:end,j]
+		#take the stream of correct data
+		start = k*SK_ints
+		end = (k+1)*SK_ints
+		data_chunk = data[:,start:end,:]
 
-			#square it
-			data_chunk = np.abs(data_chunk)**2#abs value and square
+		sk_spect = np.zeros((num_coarsechan,2))
 
-			#perform SK
-			sk_spect = SK_EST(data_chunk,n,SK_ints,d)
-			#average power spectrum
-			spectrum = np.average(data_chunk,axis=1)
-			#init flag chunk
-			flag_spec = np.zeros(num_coarsechan,dtype=np.int8)
+		#square it
+		data_chunk = np.abs(data_chunk)**2#abs value and square
 
-			#flag
-			for chan in range(num_coarsechan):
-				#is the datapoint outside the threshold?
-				if (sk_spect[chan] < lt) or (sk_spect[chan] > ut):
-					flag_spec[chan] = 1
-					flagged_pts += 1		
+		#perform SK
+		sk_spect[:,0] = SK_EST(data_chunk[:,:,0],n,SK_ints,d)
+		sk_spect[:,1] = SK_EST(data_chunk[:,:,1],n,SK_ints,d)
+		#average power spectrum
+		spectrum = np.average(data_chunk,axis=1)
+		#init flag chunk
+		flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
 
-			#append to results
-			if (block==0):
-				if j:
-					sk_p2 = sk_spect
-					spect_results_p2 = spectrum
-					flags_p2 = flag_spec
-					repl_chunk_p2.append(flag_spec)
-				else:
-					sk_p1 = sk_spect
-					spect_results_p1 = spectrum
-					flags_p1 = flag_spec
-					repl_chunk_p1.append(flag_spec)
-			else:
-				if j:
-					sk_p2 = np.c_[sk_p2,sk_spect]
-					spect_results_p2 = np.c_[spect_results_p2,spectrum]
-					flags_p2 = np.c_[flags_p2,flag_spec]
-					repl_chunk_p2.append(flag_spec)
-				else:
-					sk_p1 = np.c_[sk_p1,sk_spect]
-					spect_results_p1 = np.c_[spect_results_p1,spectrum]
-					flags_p1 = np.c_[flags_p1,flag_spec]
-					repl_chunk_p1.append(flag_spec)
+		#flag (each pol separately, for records)
+		flag_spect[sk_spect>ut] = 1
+		flag_spect[sk_spect<lt] = 1
+
+		
+
+		#append to results
+		if (k==0):
+			sk_block=np.expand_dims(sk_spect,axis=2)
+			spect_block=np.expand_dims(spectrum,axis=2)
+			flags_block = np.expand_dims(flag_spect,axis=2)
+
+		else:
+			sk_block=np.c_[sk_block,np.expand_dims(sk_spect,axis=2)]
+			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
+			flags_block = np.c_[flags_block,np.expand_dims(flag_spect,axis=2)]
 
 
-
+	if (block==0):
+		sk_all = sk_block
+		spect_all = spect_block
+		flags_all = flags_block
+	else:
+		sk_all = np.c_[sk_all,sk_block]
+		spect_all = np.c_[spect_all,spect_block]
+		flags_all = np.c_[flags_all,flags_block]
 
 
 	#Replace data
 	print('Calculations complete...')
 	print('Replacing Data...')
+	
+	repl_chunk=np.transpose(flags_block,(0,2,1))
+	#now flag shape is (chan,spectra,pol)
+	#apply union of flags
+	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
+	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
+	
+	extend = np.ones((1,SK_ints,1))
 
+	#extend flagging array
+	repl_chunk = np.kron(repl_chunk,extend)
 
-	#need to have an array here per block, but also continue appending to the list
-	#transpose is to match the dimensions to the original data
-	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
-	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
 
 	if method == 'zeros':
 		#replace data with zeros
-		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
+		data = repl_zeros(data,repl_chunk)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
-		data[:,:,0] = previous_good(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = previous_good(data[:,:,1],repl_chunk_p2,SK_ints)
+		data = previous_good(data,repl_chunk,SK_ints)
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
-		data[:,:,0] = statistical_noise(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = statistical_noise(data[:,:,1],repl_chunk_p2,SK_ints)
+		data = statistical_noise(data,repl_chunk,SK_ints)
 
 	#Write back to block
 	if output_bool:
@@ -331,39 +321,31 @@ for block in range(numblocks):
 
 
 #save SK results
-sk_p1 = np.array(sk_p1)
-sk_p2 = np.array(sk_p2)
-print('Final results shape: '+str(sk_p1.shape))
+sk_all = np.transpose(sk_all,(0,2,1))
+print('Final results shape: '+str(sk_all.shape))
 
-np.save(sk_npy_p1, sk_p1)
-np.save(sk_npy_p2, sk_p2)
-print('SK spectra saved in {} and {}'.format(sk_npy_p1,sk_npy_p2))
+np.save(sk_filename, sk_all)
+print('SK spectra saved in {}'.format(sk_filename))
 
 
 #save spectrum results
-spect_results_p1 = np.array(spect_results_p1)
-spect_results_p2 = np.array(spect_results_p2)
-
-np.save(spect_npy_p1, spect_results_p1)
-np.save(spect_npy_p2, spect_results_p2)
-print('Spectra saved in {} and {}'.format(spect_npy_p1,spect_npy_p2))
+spect_all = np.transpose(spect_all,(0,2,1))
+np.save(spect_filename, spect_all)
+print('Spectra saved in {}'.format(spect_filename))
 
 
 #save flags results
-flags_p1 = np.array(flags_p1)
-flags_p2 = np.array(flags_p2)
-
-np.save(flags_npy_p1,flags_p1)
-np.save(flags_npy_p2,flags_p2)
-print('Flags file saved to {} and {}'.format(flags_npy_p1,flags_npy_p2))
+flags_all = np.transpose(flags_all,(0,2,1))
+np.save(flags_filename,flags_all)
+print('Flags file saved to {}'.format(flags_filename))
 
 #thresholds again
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
-tot_points = sk_p1.size
-flagged_pts_p1 = np.count_nonzero(flags_p1)
-flagged_pts_p2 = np.count_nonzero(flags_p2)
+tot_points = flags_all[:,:,1].size
+flagged_pts_p1 = np.count_nonzero(flags_all[:,:,0])
+flagged_pts_p2 = np.count_nonzero(flags_all[:,:,1])
 
 print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
 flagged_percent = (float(flagged_pts_p1)/tot_points)*100
@@ -372,6 +354,14 @@ print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
 print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
 flagged_percent = (float(flagged_pts_p2)/tot_points)*100
 print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
+
+tot_points = flags_all.size
+flagged_pts_all = np.count_nonzero(flags_all)
+
+print('Union of flags: {}% of data flagged'.format((100.*flagged_pts_p1)/tot_points))
+
+
+
 
 print('Saved replaced data to '+outfile)
 

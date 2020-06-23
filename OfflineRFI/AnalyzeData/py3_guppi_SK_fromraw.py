@@ -241,7 +241,6 @@ for block in range(numblocks):
 
 	#Calculations
 	for j in range(num_pol):
-		flagged_pts=0
 		#print('Polarization '+str(j))
 		for k in range(SK_timebins):
 	
@@ -258,28 +257,35 @@ for block in range(numblocks):
 			#average power spectrum
 			spectrum = np.average(data_chunk,axis=1)
 			#init flag chunk
-			flag_spec = np.zeros(num_coarsechan,dtype=np.int8)
+			flag_spect = np.zeros(num_coarsechan,dtype=np.int8)
 
-			#flag
-			for chan in range(num_coarsechan):
-				#is the datapoint outside the threshold?
-				if (sk_spect[chan] < lt) or (sk_spect[chan] > ut):
-					flag_spec[chan] = 1
-					flagged_pts += 1		
+			#flag (each pol separately, for records)
+			flag_spect[sk_spect>ut] = 1
+			flag_spect[sk_spect<lt] = 1
 
+	
 			#append to results
-			if j:
-				sk_p2.append(sk_spect)
-				spect_results_p2.append(spectrum)
-				flags_p2.append(flag_spec)
-				repl_chunk_p2.append(flag_spec)
-				flagged_pts_p2 += flagged_pts
+			if (block==0):
+				if j:
+					sk_p2=sk_spect
+					spect_results_p2=spectrum
+					flags_p2 = flag_spect
+				else:
+					sk_p1=sk_spect
+					spect_results_p1=spectrum
+					flags_p1 = flag_spect
 			else:
-				sk_p1.append(sk_spect)
-				spect_results_p1.append(spectrum)
-				flags_p1.append(flag_spec)
-				repl_chunk_p1.append(flag_spec)
-				flagged_pts_p1 += flagged_pts
+				if j:
+					sk_p2=np.c_[sk_p2,sk_spect]
+					spect_results_p2=np.c_[spect_results_p2,spectrum]
+					flags_p2 = np.c_[flags_p2,flag_spect]
+				else:
+					sk_p1=np.c_[sk_p1,sk_spect]
+					spect_results_p1=np.c_[spect_results_p1,spectrum]
+					flags_p1 = np.c_[flags_p1,flag_spect]
+
+
+
 
 	#Replace data
 	print('Calculations complete...')
@@ -288,23 +294,30 @@ for block in range(numblocks):
 
 	#need to have an array here per block, but also continue appending to the list
 	#transpose is to match the dimensions to the original data
-	repl_chunk_p1 = np.transpose(np.array(repl_chunk_p1))	
-	repl_chunk_p2 = np.transpose(np.array(repl_chunk_p2))
+	repl_chunk = np.zeros(flags_p1.shape,dtype = np.int8)
+	repl_chunk[flags_p1==1]=1
+	repl_chunk[flags_p2==1]=1	
+
+	print('shape check')
+	print(repl_chunk.shape)
+	print(data[:,:,0].shape)
+
+	
 
 	if method == 'zeros':
 		#replace data with zeros
-		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk_p2,SK_ints)
+		data[:,:,0] = repl_zeros(data[:,:,0],repl_chunk,SK_ints)
+		data[:,:,1] = repl_zeros(data[:,:,1],repl_chunk,SK_ints)
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
-		data[:,:,0] = previous_good(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = previous_good(data[:,:,1],repl_chunk_p2,SK_ints)
+		data[:,:,0] = previous_good(data[:,:,0],repl_chunk,SK_ints)
+		data[:,:,1] = previous_good(data[:,:,1],repl_chunk,SK_ints)
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
-		data[:,:,0] = statistical_noise(data[:,:,0],repl_chunk_p1,SK_ints)
-		data[:,:,1] = statistical_noise(data[:,:,1],repl_chunk_p2,SK_ints)
+		data[:,:,0] = statistical_noise(data[:,:,0],repl_chunk,SK_ints)
+		data[:,:,1] = statistical_noise(data[:,:,1],repl_chunk,SK_ints)
 
 	#Write back to block
 	print('Re-formatting data and writing back to file...')

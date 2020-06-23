@@ -138,13 +138,13 @@ def guppi_format(a):
 #TODO: needs vectorization
 #@jit(nopython=True)
 #this is for non-ms implementation
-def repl_zeros(a,f,x):
-	out_arr = np.array(a)
-	for i in range(f.shape[0]):
-		for j in range(f.shape[1]):
-			if f[i,j]==1:
-				out_arr[i,j*x:(j+1)*x] = np.float64(1e-6)
-	#a[f==1]==np.float64(0)
+#a: input data
+#input flags
+#m: value used in SK eqn
+
+def repl_zeros(a,f):
+	#replace time/frequency pixels with zeros (1e-4 to be friendly with log scales)
+	a[f==1]=1e-4
 	return a
 
 
