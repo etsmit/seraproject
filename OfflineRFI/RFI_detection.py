@@ -19,7 +19,11 @@ Supporting / misc functions in RFI_support
 import numpy as np
 import os,sys
 
-from numba import jit
+import time
+
+from RFI_support import *
+
+#from numba import jit
 
 
 
@@ -156,9 +160,11 @@ def sir(a,row_eta,col_eta,combine):
 	out : ndarray
 		2-dimensional array of extended mask bools
 	"""
+	t_start = time.time()
+	print(t_start)
 
-	max_row_win = 1
-	max_col_win = 0.01
+	max_row_win = 0.01
+	max_col_win = 1
     
 	sir_mask = np.array(a)
 	row_mask = np.zeros(a.shape)
@@ -170,7 +176,7 @@ def sir(a,row_eta,col_eta,combine):
 			row_mask[row,:] = sir_1d(a[row,:],row_eta,max_row_win)
 		print('doing cols...')
 		for col in range(a.shape[1]):
-		col_mask[:,col] = sir_1d(a[:,col],col_eta,max_col_win)
+			col_mask[:,col] = sir_1d(a[:,col],col_eta,max_col_win)
 		sir_mask[row_mask==2]=2
 		sir_mask[col_mask==2]=2
 		#reset original flags back to 1's
@@ -203,12 +209,43 @@ def sir(a,row_eta,col_eta,combine):
 	sir_mask[sir_mask != 0] = 1
 
 	
-        
-    return sir_mask
+	t_end = time.time()
+	print('sir took {} seconds'.format(t_end-t_start))
+	return sir_mask
 
 
 
+def sir_1d(a,eta,max_win_sz):
+	"""
+	SIR in 1D, for use in sir() above
 
+	Parameters
+	-----------
+	a : ndarray
+		1-dimensional array of mask bools assuming 1=flag,0=clean. Shape (Num Channels , Num Raw Spectra)
+	eta : float
+		float in range (0-1) to determine how many extra rows are flagged
+	max_win_sz : int
+		maximum window size. Speeds up the code if you don't want to flag huge sections of data
+
+	Returns
+	-----------
+	out : ndarray
+		1-dimensional array of extended mask bools
+	"""
+	out = np.array(a)
+	a_sz = len(a)
+	for win_sz in range(2,int(a_sz*max_win_sz)):
+		i=0
+		r = rollin(a,win_sz)
+		flg = np.count_nonzero(r,axis=1)
+		[flg >= (1-eta)*win_sz]
+		for window in r:
+			flg = np.count_nonzero(win)
+			if flg >= (1-eta)*win_sz:
+				out[i:i+win_sz] = 2
+			i += 1
+	return out
 
 
 

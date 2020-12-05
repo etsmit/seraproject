@@ -80,7 +80,7 @@ import time
 
 from blimpy import GuppiRaw
 
-from RFI_detect import *
+from RFI_detection import *
 from RFI_support import *
 
 #--------------------------------------
@@ -90,7 +90,7 @@ from RFI_support import *
 #in_dir = '/export/home/ptcs/scratch/raw_RFI_data/'#assuming maxwell
 #in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#assuming lustre access machines
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz
-#my_dir = '/home/scratch/esmith/RFI_MIT/testing/'#to save (not data) results to
+#my_dir = '/home/scratch/esmith/RFI_MIT/testing/entropy/'#to save (not data) results to
 #out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
 my_dir = '/data/scratch/Spring2020/'
 out_dir = my_dir 
@@ -124,7 +124,7 @@ parser.add_argument('-n',dest='n',type=int,default=1,help='Integer. Number of in
 parser.add_argument('-v',dest='vegas_dir',type=str,default='0',help='If inputting a VEGAS spectral line mode file, enter AGBT19B_335 session number (1/2) and bank (C/D) ex "1D".')
 
 #write out a whole new raw file or just get SK/accumulated spectra results
-parser.add_argument('-newfile',dest='output_bool',type=bool,default=False,help='Copy the original data and output a replaced datafile. Default True. Change to False to not write out a whole new GUPPI file')
+parser.add_argument('-newfile',dest='output_bool',type=bool,default=True,help='Copy the original data and output a replaced datafile. Default True. Change to False to not write out a whole new GUPPI file')
 
 #pick d in the case that it isn't 1. Required for low-bit quantization.
 #Can be found (i think) by running SK and changing d to be 1/x, where x is the center of the SK value distribution.
@@ -192,7 +192,7 @@ if rawdata:
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'s'+str(sigma)+infile[-4:]
+outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+infile[-4:]
 
 
 
@@ -252,14 +252,14 @@ for block in range(numblocks):
 	# FFT has already happened in the roaches
 	num_pol = data.shape[2]
 
-	print('Data shape: '+str(data.shape))
+	print('Data shape: {} || block size: {}'.format(data.shape,data.nbytes))
 
 	#save raw data
 	if rawdata:
 		#pad number to three digits
-		block = str(block).zfill(3)
+		block_fname = str(block).zfill(3)
 
-		save_fname = base+'_block'+block+'.npy'
+		save_fname = base+'_block'+block_fname+'.npy'
 		np.save(save_fname,data)
 		#print('Saved under '+out_dir+save_fname)
 
@@ -298,8 +298,8 @@ for block in range(numblocks):
 		data_chunk = np.abs(data_chunk)**2#abs value and square
 
 		#perform SK
-		sk_spect[:,0] = SK_EST(data_chunk[:,:,0],n,SK_ints,d)
-		sk_spect[:,1] = SK_EST(data_chunk[:,:,1],n,SK_ints,d)
+		sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_ints,n,d)
+		sk_spect[:,1] = SK_EST(data_chunk[:,:,1],SK_ints,n,d)
 		#average power spectrum
 		spectrum = np.average(data_chunk,axis=1)
 		#init flag chunk
@@ -322,7 +322,7 @@ for block in range(numblocks):
 			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
 			flags_block = np.c_[flags_block,np.expand_dims(flag_spect,axis=2)]
 
-
+	#print(block)
 	if (block==0):
 		sk_all = sk_block
 		spect_all = spect_block

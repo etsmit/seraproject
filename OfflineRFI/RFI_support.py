@@ -30,7 +30,7 @@ import scipy as sp
 import scipy.optimize
 import scipy.special
 
-from numba import jit
+#from numba import jit
 
 
 
@@ -110,33 +110,32 @@ def SK_thresholds(M, N = 1, d = 1, p = 0.0013499):
 def repl_zeros(a,f):
 	"""
 	Replace flagged data with 0's.
-	Deprecated, since it's easy to do in the pipeline, but kept here for posterity
 
 	Parameters
 	-----------
 	a : ndarray
-		2-dimensional array of power values. Shape (Num Channels , Num Raw Spectra)
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
 	f : ndarray
-		2-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra), should be same shape as a.
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
 	
 	
 	Returns
 	-----------
 	out : ndarray
-		2-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra)
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
 	"""
-	a[f==1]=1e-4
+	#these will get cast to 0 in the next step, the 1e-4 is to stop issues with log10
+	a[f==1]=1e-4 + 1e-4*1.j
 	return a
 
 
 
 
 #replace with previous good data (or future good)
-@jit
+
 def previous_good(a,f,x):
 	"""
-	Replace flagged data with 0's.
-	Deprecated, since it's easy to do in the pipeline, but kept here for posterity
+	Replace flagged data with copies of clean data
 
 	Parameters
 	-----------
@@ -194,8 +193,10 @@ def previous_good(a,f,x):
 
 #supports statistical_noise function
 #i = coarse channel of interest
-@jit
+
 def gen_good_data(a,f,x,i):
+	
+	good_data
 	good_data = []
 	#print('Coarse Chan '+str(i))
 	for j in range(f.shape[1]):
@@ -208,18 +209,17 @@ def gen_good_data(a,f,x,i):
 
 
 #replace with statistical noise
-@jit
+
 def statistical_noise(a,f,x):
 	"""
-	Replace flagged data with 0's.
-	Deprecated, since it's easy to do in the pipeline, but kept here for posterity
+	Replace flagged data with statistical noise.
 
 	Parameters
 	-----------
 	a : ndarray
-		2-dimensional array of power values. Shape (Num Channels , Num Raw Spectra)
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
 	f : ndarray
-		2-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra), should be same shape as a.
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
 	x : int
 		is just m from other functions.
 	
@@ -227,61 +227,74 @@ def statistical_noise(a,f,x):
 	Returns
 	-----------
 	out : ndarray
-		2-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra)
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
 	"""
-	for i in range(f.shape[0]):
-		#print('coarsechan {}'.format(i))
-		good_data = gen_good_data(a,f,x,i)
+	for pol in range(f.shape[2]):	
+		for i in range(f.shape[0]):
+			#find clean data points from same channel and polarization
+			good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#how many data points do we need to replace
+			bad_data_size = a[i,:,pol][f[i,:,pol] == 1].size
  
-		repl_chunk = np.zeros(x,dtype=np.complex64)
+			repl_chunk = np.zeros(x,dtype=np.complex64)
 
-		if len(good_data) == 0:
-			print('****No good data in channel {}****'.format(i))
+			if len(good_data) == 0:
+				print('****No good data in channel {}****'.format(i))
 			#-next line replaces data-
-			a = adj_chan(a,f,i,x)
-		elif len(good_data) < (2*x+1):
-			print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
-		else:
-			ave_real = np.mean(good_data.real)
-			ave_imag = np.mean(good_data.imag)
-			std_real = np.std(good_data.real)
-			std_imag = np.std(good_data.imag)
-			for y in range(f.shape[1]):
-				if f[i,y] == 1:
-					#science
-					repl_chunk.real = np.random.normal(ave_real,std_real,x)
-					repl_chunk.imag = np.random.normal(ave_imag,std_imag,x)
-					a[i,y*x:(y+1)*x] = repl_chunk
+				#taking this out for now, the current adj_chans is not enough
+				#leaving this data as is
+				a = adj_chan(a,f,i,x)
+			elif len(good_data) < (2*x+1):
+				print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
+			else:
+				ave_real = np.mean(good_data.real)
+				ave_imag = np.mean(good_data.imag)
+				std_real = np.std(good_data.real)
+				std_imag = np.std(good_data.imag)
+
+				a[i,:,pol][f[i,:,pol] == 1].real = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
+				a[i,:,pol][f[i,:,pol] == 1].imag = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
+						#a[i,y*x:(y+1)*x] = repl_chunk
 
 	return a
+
 
 #alternate statistical noise generator if entire channel is flagged
 #for the length of the block
 #pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
-@jit
+
+
 def adj_chan(a,f,c,x):
 	#replace a bad channel 'c' with stat. noise derived from adjacent channels
-	out_arr = np.array(a)
-	good_data = []
 
-	adj_chans = [c-2,c-1,c+1,c+2]
-	adj_chans = [i for i in adj_chans if i>=0]
-	adj_chans = [i for i in adj_chans if i<a.shape[1]]
- 	#print('Pulling data from channels: {}'.format(adj_chans))
+	for p in pol:
+		out_arr = np.array(a)
+		good_data = []
+		good_data = a[i,:,pol][f[i,:,pol] == 0]
+
+		#define adjacent channels and clear ones that don't exist
+		adj_chans = [c-2,c-1,c+1,c+2]
+		adj_chans = [i for i in adj_chans if i>=0]
+		adj_chans = [i for i in adj_chans if i<a.shape[1]]
+ 		#print('Pulling data from channels: {}'.format(adj_chans))
 	
-	for i in adj_chans:
-		good_data.extend(list(gen_good_data(out_arr,f,x,i)))
-	good_data = np.array(good_data).flatten()
+		for i in adj_chans:
+			good_data.extend(good_data = a[i,:,pol][f[i,:,pol] == 0])
+		good_data = np.array(good_data).flatten()
 
-	ave_real = np.mean(good_data.real)
-	ave_imag = np.mean(good_data.imag)
-	std_real = np.std(good_data.real)
-	std_imag = np.std(good_data.imag)
+		ave_real = np.mean(good_data.real)
+		ave_imag = np.mean(good_data.imag)
+		std_real = np.std(good_data.real)
+		std_imag = np.std(good_data.imag)
+		
+		a[c,:,pol][f[i,:,pol] == 1].real = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
+		a[c,:,pol][f[i,:,pol] == 1].imag = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
+		
 
-	out_arr[c,:].real = np.random.normal(ave_real,std_real,out_arr.shape[1])
-	out_arr[c,:].imag = np.random.normal(ave_imag,std_imag,out_arr.shape[1])
+		#out_arr[c,:].real = np.random.normal(ave_real,std_real,out_arr.shape[1])
+		#out_arr[c,:].imag = np.random.normal(ave_imag,std_imag,out_arr.shape[1])
 	
-	return out_arr
+	return a
 
 
 
@@ -315,12 +328,27 @@ def method_check(s):
 		return False
 
 #flatten data array 'a' into format writeable to guppi file
-@jit
+
 def guppi_format(a):
-	out_arr = a.view(np.float32)
-	out_arr = out_arr.ravel()#this is slow because view won't translate 32bit to 8bit
-	out_arr = out_arr.astype(np.int8)
+	#takes array of np.complex64,ravels it and outputs as 1D array of signed
+	#8 bit integers ordered real,imag,real,imag,.....
+	#init output
+	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
+	#get real values, ravel, cast to int8
+	a_real = a.ravel().real.astype(np.int8)
+	#get imag values, ravel, cast to int8
+	a_imag = a.ravel().imag.astype(np.int8)
+	#interleave
+	out_arr[::2] = a_real
+	out_arr[1::2] = a_imag
 	return out_arr
+
+
+#faster rolling window for SIR
+def rollin(a,win_sz):
+	shape = a.shape[:-1] + (a.shape[-1] - win_sz+1,win_sz)
+	strides = a.strides + (a.strides[-1],)
+	return np.lib.stride_tricks.as_strided(a,shape=shape,strides=strides)
 
 
 
