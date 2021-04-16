@@ -90,7 +90,7 @@ from RFI_support import *
 #in_dir = '/export/home/ptcs/scratch/raw_RFI_data/'#assuming maxwell
 #in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#assuming lustre access machines
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz
-npy_dir = '/home/scratch/esmith/RFI_MIT/npy_test/'#to save (not data) results to
+#my_dir = '/home/scratch/esmith/RFI_MIT/testing/entropy/'#to save (not data) results to
 #out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
 my_dir = '/data/scratch/Spring2020/'
 out_dir = my_dir 
@@ -133,6 +133,9 @@ parser.add_argument('-d',dest='d',type=float,default=1.,help='Float. Shape param
 #Save raw data to npy files (storage intensive, unnecessary)
 parser.add_argument('-npy',dest='rawdata',type=bool,default=False,help='Boolean. True to save raw data to npy files. This is storage intensive and unnecessary since blimpy. Default is False')
 
+#Save raw data to npy files (storage intensive, unnecessary)
+parser.add_argument('-ms',dest='ms',type=str,default=11,help='Multiscale SK. 2 ints : ChanSpec. Default 11')
+
 
 #parse input variables
 args = parser.parse_args()
@@ -149,6 +152,10 @@ if v_s != '0':
 output_bool = args.output_bool
 d = args.d
 rfi = args.RFI
+ms = args.ms
+ms0 = int(ms[0])
+ms1 = int(ms[1])
+
 
 
 
@@ -158,7 +165,7 @@ rfi = args.RFI
 if infile[0] != '/':
 	infile = in_dir + infile
 else:
-	in_dir = infile[:infile.rindex('/')+1]
+	in_dir = infile[:infile.index('/')+1]
 
 if infile[-4:] != '.raw':
 	print("WARNING input filename doesn't end in '.raw'. Auto-generated output files will have weird names.")
@@ -168,13 +175,14 @@ if infile[-4:] != '.raw':
 #--------------------------------------
 
 
-base = npy_dir+infile[len(in_dir):-4]
+base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
-flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
-spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
+ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR.npy'
+sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_SIR.npy'
+flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR.npy'
+spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_SIR.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -183,7 +191,7 @@ print('Probability of false alarm: {}'.format(SK_p))
 
 #calculate thresholds
 print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_ints, N = n, d = d, p = SK_p)
+lt, ut = SK_thresholds(SK_ints-(ms1-1), N = n, d = d, p = SK_p)
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
@@ -194,7 +202,7 @@ if rawdata:
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+infile[-4:]
+outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR'+infile[-4:]
 
 
 
@@ -228,7 +236,7 @@ print('File has '+str(numblocks)+' data blocks')
 
 for block in range(numblocks):
 	print('------------------------------------------')
-	print('Block: '+str(block))
+	print('Block: {}/{}'.format(block+1,numblocks))
 	if block == 0:
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
@@ -281,12 +289,138 @@ for block in range(numblocks):
 
 	if mismatch != 0:
 		data = data[:,:kept_samples,:]
+	
+	#flipped = np.zeros(data.shape,dtype=np.complex64)
+	#flipped[:,:,0] = data[:,:,1]
+	#flipped[:,:,1] = data[:,:,0]
+	#data = np.array(flipped)
+	#flipped = None
 
 
 	#Calculations
 
 	#ASSUMING NPOL = 2:
+	s1 = np.zeros((num_coarsechan,SK_timebins,2))
+	s2 = np.zeros((num_coarsechan,SK_timebins,2))
 
+
+	#make s1 and s2 arrays, as well as avg spects
+	for k in range(SK_timebins):
+	
+		#take the stream of correct data
+
+
+		start = k*SK_ints
+		end = (k+1)*SK_ints
+		data_chunk = data[:,start:end,:]
+
+		data_chunk = np.abs(data_chunk)**2
+		a = np.array(data_chunk)
+		a2 = a**2
+
+		#ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
+		#ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
+
+		s1[:,k,:] = np.sum(a,axis=1)
+		s2[:,k,:] = np.sum(a2,axis=1)
+
+		#spectrum = np.average(data_chunk,axis=1)
+
+		#if (k==0):
+		#	spect_block=np.expand_dims(spectrum,axis=2)
+
+		#else:
+		#	spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
+
+
+	#make ms_s1 and ms_s2 arrays out of those by binning
+	ms_binsize = ms0*ms1
+
+	ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
+	ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
+	
+	for ichan in range(ms0):
+		for itime in range(ms1):
+			#print('--------')
+			#print(ms_s1.shape)
+			#print(ms_binsize)
+			#print(s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_ints-(ms1-1)),:].shape)
+			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_timebins-(ms1-1)),:])
+			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_timebins-(ms1-1)),:])
+
+	#deprecated, for 2x2 bins
+	#ms_s1 = (s1[1:,1:,:] + s1[1:,:-1,:] + s1[:-1,1:,:]+s1[:-1,:-1,:])/4
+	#ms_s2 = (s2[1:,1:,:] + s2[1:,:-1,:] + s2[:-1,1:,:]+s2[:-1,:-1,:])/4
+
+
+	print('int files saved')
+
+
+	#Multiscale SK
+	for k in range(SK_timebins-(ms1-1)):
+	
+		#take the stream of correct data
+
+
+		start = k*SK_ints
+		end = (k+1)*SK_ints
+		data_chunk = data[:,start:end,:]
+
+
+		sk_spect = np.zeros((num_coarsechan-(ms0-1),2))
+
+		#square it
+		data_chunk = np.abs(data_chunk)**2#abs value and square
+
+		#perform RFI detection
+		if (rfi == 'SKurtosis'):
+			#print(ms_s1.shape)
+			#print(ms_s2.shape)
+			sk_spect[:,0] = ms_SK_EST(ms_s1[:,k,0],ms_s2[:,k,0],SK_ints-(ms1-1),n,d)
+			sk_spect[:,1] = ms_SK_EST(ms_s1[:,k,1],ms_s2[:,k,1],SK_ints-(ms1-1),n,d)
+			#init flag chunk
+			#plt.hist(sk_spect.flatten(),bins=40)
+			#plt.show()
+			ms_flag_spect = np.zeros((num_coarsechan-(ms0-1),2),dtype=np.int8)
+			#flag (each pol separately, for records)
+			#flag_spect[sk_spect>ut] = 1
+			ms_flag_spect[sk_spect>ut] = 1
+			ms_flag_spect[sk_spect<lt] = 1
+			#print('{}/{}'.format(np.count_nonzero(ms_flag_spect[:,0]),np.count_nonzero(ms_flag_spect[:,1])))
+			#flag_spect[:-(ms1-1)][sk_spect>ut] = 1
+			#flag_spect[sk_spect<lt] = 1
+
+		elif (rfi == 'SEntropy'):
+			sk_spect[:,0] = entropy(data_chunk[:,:,0])
+			sk_spect[:,1] = entropy(data_chunk[:,:,1])
+			#init flag chunk
+			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
+			#flag (each pol separately, for records)
+			#flag_spect[sk_spect>ut] = 1
+			#flag_spect[sk_spect<lt] = 1
+
+
+		#average power spectrum
+		#spectrum = np.average(data_chunk,axis=1)
+
+		
+
+		#append to results
+		if (k==0):
+			ms_sk_block=np.expand_dims(sk_spect,axis=2)
+			#spect_block=np.expand_dims(spectrum,axis=2)
+			ms_flags_block = np.expand_dims(ms_flag_spect,axis=2)
+
+		else:
+			ms_sk_block=np.c_[ms_sk_block,np.expand_dims(sk_spect,axis=2)]
+			#spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
+			ms_flags_block = np.c_[ms_flags_block,np.expand_dims(ms_flag_spect,axis=2)]
+
+
+	#adj_chan flagging here
+	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
+
+	#individual SK
 	for k in range(SK_timebins):
 	
 		#take the stream of correct data
@@ -299,6 +433,8 @@ for block in range(numblocks):
 		#square it
 		data_chunk = np.abs(data_chunk)**2#abs value and square
 
+		spectrum = np.average(data_chunk,axis=1)
+
 		#perform RFI detection
 		if (rfi == 'SKurtosis'):
 			sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_ints,n,d)
@@ -308,23 +444,7 @@ for block in range(numblocks):
 			#flag (each pol separately, for records)
 			flag_spect[sk_spect>ut] = 1
 			flag_spect[sk_spect<lt] = 1
-		elif (rfi == 'SEntropy'):
-			sk_spect[:,0] = entropy(data_chunk[:,:,0])
-			sk_spect[:,1] = entropy(data_chunk[:,:,1])
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			#flag_spect[sk_spect>ut] = 1
-			#flag_spect[sk_spect<lt] = 1
 
-
-		#average power spectrum
-		spectrum = np.average(data_chunk,axis=1)
-
-
-		
-
-		#append to results
 		if (k==0):
 			sk_block=np.expand_dims(sk_spect,axis=2)
 			spect_block=np.expand_dims(spectrum,axis=2)
@@ -335,18 +455,46 @@ for block in range(numblocks):
 			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
 			flags_block = np.c_[flags_block,np.expand_dims(flag_spect,axis=2)]
 
-	#adj_chan flagging here
-	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
 
+
+
+
+
+
+
+
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
+
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,0,:])/ms_flags_block[:,1,:].size),(100.*np.count_nonzero(ms_flags_block[:,1,:])/ms_flags_block[:,1,:].size)))
+
+
+	#flags_block = np.zeros((num_coarsechan,2,SK_timebins))
+
+	for ichan in range(ms0):
+		for itime in range(ms1):
+			#print(flags_block.shape)
+			#print(ms_flags_block.shape)
+			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),:,itime:itime+(SK_timebins-(ms1-1))][ms_flags_block==1] = 1
+
+
+
+	#flags_block[1:,:,1:][ms_flags_block==1]=1
+	#flags_block[1:,:,:-1][ms_flags_block==1]=1
+	#flags_block[:-1,:,1:][ms_flags_block==1]=1
+	#flags_block[:-1,:,:-1][ms_flags_block==1]=1
+	#print(flags_block.shape)
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
 
 
 	#print(block)
 	if (block==0):
 		sk_all = sk_block
+		ms_sk_all = ms_sk_block
 		spect_all = spect_block
 		flags_all = flags_block
 	else:
 		sk_all = np.c_[sk_all,sk_block]
+		ms_sk_all = np.c_[ms_sk_all,ms_sk_block]
 		spect_all = np.c_[spect_all,spect_block]
 		flags_all = np.c_[flags_all,flags_block]
 
@@ -367,6 +515,11 @@ for block in range(numblocks):
 
 	#extend flagging array
 	repl_chunk = np.kron(repl_chunk,extend)
+
+	#sir flagging?
+	#for i in range(2):
+	#	repl_chunk[:,:,0] = sir(repl_chunk[:,:,0],0.2,0.2,'union')
+	#	repl_chunk[:,:,1] = sir(repl_chunk[:,:,1],0.2,0.2,'union')
 
 
 	if method == 'zeros':
@@ -395,6 +548,16 @@ print('Final results shape: '+str(sk_all.shape))
 
 np.save(sk_filename, sk_all)
 print('SK spectra saved in {}'.format(sk_filename))
+
+
+#save ms_SK results
+ms_sk_all = np.transpose(ms_sk_all,(0,2,1))
+print('Final results shape: '+str(ms_sk_all.shape))
+
+np.save(ms_sk_filename, ms_sk_all)
+print('ms_SK spectra saved in {}'.format(ms_sk_filename))
+
+
 
 
 #save spectrum results

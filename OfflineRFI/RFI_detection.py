@@ -21,6 +21,8 @@ import os,sys
 
 import time
 
+import matplotlib.pyplot as plt
+
 from RFI_support import *
 
 #from numba import jit
@@ -68,7 +70,7 @@ def SK_EST(a,m,n=1,d=1):
 #multiscale variant
 #only takes n=1 for now
 #takes sum1 and sum2 as arguments rather than computing inside
-def ms_SK_EST(s1,s2,m):
+def ms_SK_EST(s1,s2,m,n=1,d=1):
 	"""
 	Multi-scale Variant of SK_EST.
 
@@ -83,19 +85,53 @@ def ms_SK_EST(s1,s2,m):
 	m : int
 		integer value of M in the SK function. Outside accumulations of spectra.
 
+	ms0 : int
+		axis 0 multiscale
+	
+	ms1 : int
+		axis 1 multiscale
 	
 	Returns
 	-----------
 	out : ndarray
 		Spectrum of SK values.
 	"""
-	n=1
-	d=1
-	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1))-1)
+	
+                 #((m*n*d+1)/(m-1))*(((m*sum2)/(sum1**2))-1)
+	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1**2))-1)
+	#print(sk_est)
 	return sk_est
 
 
+#secondary SK variant
+#takes mean/std of unflagged data points in 7 nearest chans (3 on each side)
+#flags anything mean+2*std away in log power AND sk
+def adj_chan_skflags(a,f,sk,a_sig,sk_sig):
+	
+	#powers working in log space
+	a[a==0]=1e-3
+	loga = np.log10(a)
 
+	for pol in range(a.shape[2]):
+		for c in range(a.shape[0]):
+
+			#define adjacent channels and clear ones that don't exist
+			adj_chans = [c-4,c-3,c-2,c-1,c+1,c+2,c+3,c+4]
+			adj_chans = [i for i in adj_chans if i>=0]
+			adj_chans = [i for i in adj_chans if i<a.shape[1]]
+
+			#find 'clean' points not flagged by SK
+			clean_a = a[adj_chans,:,:][f[adj_chans,:,:]==0]
+			clean_sk = sk[adj_chans,:,:][f[adj_chans,:,:]==0]
+
+			a_thresh = np.mean(clean_a)+a_sig*np.std(clean_a)
+			sk_thresh = np.mean(clean_sk)+sk_sig*np.std(clean_sk)
+
+			#add flags based on mean+sig*sigma
+			f[c,:,:][a[c,:,:]>a_thresh]=1
+			f[c,:,:][sk[c,:,:]>sk_thresh]=1
+
+	return f
 
 
 #---------------------------------------------------------
@@ -104,7 +140,7 @@ def ms_SK_EST(s1,s2,m):
 
 
 
-def entropy(a,nbit):
+def entropy(a,nbit=16):
 	"""
 	Spectral Entropy RFI detection (dev. by Natalia Schmidt, Thirimachos Bourlai)
 
@@ -124,9 +160,13 @@ def entropy(a,nbit):
 	nchan = a.shape[0]
 	H = np.empty(nchan,dtype = np.float32)
 	for i in range(nchan):
-		num,_ = plt.hist(a[i,:],bins=range(0,2**nbit,1))
+		num,bins,patches = plt.hist(a[i,:],bins=range(0,2**nbit,1))
+		np.save('num.npy',num)
+		#print(type(x))
+		#print(x)
 		num /= np.sum(num)
 		H[i] = np.sum(-num*np.log2(num))
+	plt.cla()
 	return H
 
 
@@ -241,7 +281,7 @@ def sir_1d(a,eta,max_win_sz):
 		flg = np.count_nonzero(r,axis=1)
 		[flg >= (1-eta)*win_sz]
 		for window in r:
-			flg = np.count_nonzero(win)
+			flg = np.count_nonzero(window)
 			if flg >= (1-eta)*win_sz:
 				out[i:i+win_sz] = 2
 			i += 1

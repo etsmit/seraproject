@@ -1,9 +1,10 @@
 #--------------------------------------------------
 """
-detectRFI_VPM.py
+RegenerateSpect.py
 
 
-Main program for detecting/excising RFI in seraproj
+MaJust makes the averaged spectrogram of a mitigated datafile to compare power and 
+data replacement effectiveness
 github.com/etsmit/seraproj
 
  - Opens GUPPI/VPM raw file 
@@ -176,6 +177,8 @@ sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy
 flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
 spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
 
+print(spect_filename)
+
 #threshold calc from sigma
 #defined by symmetric normal distribution
 SK_p = (1-scipy.special.erf(sigma/math.sqrt(2))) / 2
@@ -208,10 +211,10 @@ start_time = time.time()
 
 
 #os.system('rm '+outfile)
-if output_bool:
-	print('Saving replaced data to '+outfile)
-	os.system('cp '+infile+' '+outfile)
-	out_rawFile = open(outfile,'rb+')
+#if output_bool:
+#	print('Saving replaced data to '+outfile)
+#	os.system('cp '+infile+' '+outfile)
+#	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
 print('Opening file: '+infile)
@@ -244,8 +247,8 @@ for block in range(numblocks):
 		for line in header:
 			print(line+':  '+str(header[line]))
 
-	if output_bool:
-		out_rawFile.seek(headersize,1)
+	#if output_bool:
+	#	out_rawFile.seek(headersize,1)
 
 	num_coarsechan = data.shape[0]
 	num_timesamples= data.shape[1]
@@ -300,22 +303,7 @@ for block in range(numblocks):
 		data_chunk = np.abs(data_chunk)**2#abs value and square
 
 		#perform RFI detection
-		if (rfi == 'SKurtosis'):
-			sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_ints,n,d)
-			sk_spect[:,1] = SK_EST(data_chunk[:,:,1],SK_ints,n,d)
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			flag_spect[sk_spect>ut] = 1
-			flag_spect[sk_spect<lt] = 1
-		elif (rfi == 'SEntropy'):
-			sk_spect[:,0] = entropy(data_chunk[:,:,0])
-			sk_spect[:,1] = entropy(data_chunk[:,:,1])
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			#flag_spect[sk_spect>ut] = 1
-			#flag_spect[sk_spect<lt] = 1
+
 
 
 		#average power spectrum
@@ -326,14 +314,11 @@ for block in range(numblocks):
 
 		#append to results
 		if (k==0):
-			sk_block=np.expand_dims(sk_spect,axis=2)
 			spect_block=np.expand_dims(spectrum,axis=2)
-			flags_block = np.expand_dims(flag_spect,axis=2)
+
 
 		else:
-			sk_block=np.c_[sk_block,np.expand_dims(sk_spect,axis=2)]
 			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
-			flags_block = np.c_[flags_block,np.expand_dims(flag_spect,axis=2)]
 
 	#adj_chan flagging here
 	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
@@ -342,59 +327,19 @@ for block in range(numblocks):
 
 	#print(block)
 	if (block==0):
-		sk_all = sk_block
 		spect_all = spect_block
-		flags_all = flags_block
 	else:
-		sk_all = np.c_[sk_all,sk_block]
 		spect_all = np.c_[spect_all,spect_block]
-		flags_all = np.c_[flags_all,flags_block]
 
 
 
 
-	#Replace data
-	print('Calculations complete...')
-	print('Replacing Data...')
-	
-	repl_chunk=np.transpose(flags_block,(0,2,1))
-	#now flag shape is (chan,spectra,pol)
-	#apply union of flags
-	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
-	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
-	
-	extend = np.ones((1,SK_ints,1))
-
-	#extend flagging array
-	repl_chunk = np.kron(repl_chunk,extend)
-
-
-	if method == 'zeros':
-		#replace data with zeros
-		data = repl_zeros(data,repl_chunk)
-
-	if method == 'previousgood':
-		#replace data with previous (or next) good
-		data = previous_good(data,repl_chunk,SK_ints)
-
-	if method == 'stats':
-		#replace data with statistical noise derived from good datapoints
-		data = statistical_noise(data,repl_chunk,SK_ints)
-
-	#Write back to block
-	if output_bool:
-		print('Re-formatting data and writing back to file...')
-		data = guppi_format(data)
-		out_rawFile.write(data.tostring())
 
 
 
-#save SK results
-sk_all = np.transpose(sk_all,(0,2,1))
-print('Final results shape: '+str(sk_all.shape))
 
-np.save(sk_filename, sk_all)
-print('SK spectra saved in {}'.format(sk_filename))
+
+
 
 
 #save spectrum results
@@ -403,36 +348,7 @@ np.save(spect_filename, spect_all)
 print('Spectra saved in {}'.format(spect_filename))
 
 
-#save flags results
-flags_all = np.transpose(flags_all,(0,2,1))
-np.save(flags_filename,flags_all)
-print('Flags file saved to {}'.format(flags_filename))
 
-#thresholds again
-print('Upper Threshold: '+str(ut))
-print('Lower Threshold: '+str(lt))
-
-tot_points = flags_all[:,:,1].size
-flagged_pts_p1 = np.count_nonzero(flags_all[:,:,0])
-flagged_pts_p2 = np.count_nonzero(flags_all[:,:,1])
-
-print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(flagged_pts_p1)/tot_points)*100
-print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
-
-print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(flagged_pts_p2)/tot_points)*100
-print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
-
-tot_points = flags_all.size
-flagged_pts_all = np.count_nonzero(flags_all)
-
-print('Union of flags: {}% of data flagged'.format((100.*flagged_pts_p1)/tot_points))
-
-
-
-
-print('Saved replaced data to '+outfile)
 
 
 end_time = time.time()

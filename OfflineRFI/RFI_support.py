@@ -30,6 +30,8 @@ import scipy as sp
 import scipy.optimize
 import scipy.special
 
+import matplotlib.pyplot as plt
+
 #from numba import jit
 
 
@@ -124,7 +126,7 @@ def repl_zeros(a,f):
 	out : ndarray
 		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
 	"""
-	#these will get cast to 0 in the next step, the 1e-4 is to stop issues with log10
+	#these will get cast to 0 in the next step, the 1e-4 is to stop any possible issues with log10
 	a[f==1]=1e-4 + 1e-4*1.j
 	return a
 
@@ -210,7 +212,7 @@ def gen_good_data(a,f,x,i):
 
 #replace with statistical noise
 
-def statistical_noise(a,f,x):
+def statistical_noise(a,f):
 	"""
 	Replace flagged data with statistical noise.
 
@@ -232,30 +234,30 @@ def statistical_noise(a,f,x):
 	for pol in range(f.shape[2]):	
 		for i in range(f.shape[0]):
 			#find clean data points from same channel and polarization
-			good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#good_data = a[i,:,pol][f[i,:,pol] == 0]
 			#how many data points do we need to replace
 			bad_data_size = a[i,:,pol][f[i,:,pol] == 1].size
  
-			repl_chunk = np.zeros(x,dtype=np.complex64)
-
-			if len(good_data) == 0:
-				print('****No good data in channel {}****'.format(i))
-			#-next line replaces data-
-				#taking this out for now, the current adj_chans is not enough
-				#leaving this data as is
-				a = adj_chan(a,f,i,x)
-			elif len(good_data) < (2*x+1):
-				print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
-			else:
-				ave_real = np.mean(good_data.real)
-				ave_imag = np.mean(good_data.imag)
-				std_real = np.std(good_data.real)
-				std_imag = np.std(good_data.imag)
-
-				a[i,:,pol][f[i,:,pol] == 1].real = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
-				a[i,:,pol][f[i,:,pol] == 1].imag = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
+			#repl_chunk = np.zeros(x,dtype=np.complex64)
+			#a = adj_chan(a,f,i,x)
+			#if len(good_data) == 0:
+			#	print('****No good data in channel {}****'.format(i))
+			#	#-next line replaces data-
+			#	a = adj_chan(a,f,i,x)
+			#else:
+			#	if len(good_data) < (2*x+1):
+			#		print('****Low number of good data in channel {} : {} data points****'.format(i,len(good_data)))
+			#	ave_real = np.mean(good_data.real)
+			#	ave_imag = np.mean(good_data.imag)
+			#	std_real = np.std(good_data.real)
+			#	std_imag = np.std(good_data.imag)
+			#	a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
+			#	a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
 						#a[i,y*x:(y+1)*x] = repl_chunk
 
+			ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
+			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
+			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
 	return a
 
 
@@ -264,37 +266,59 @@ def statistical_noise(a,f,x):
 #pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
 
 
-def adj_chan(a,f,c,x):
+def adj_chan_good_data(a,f,c):
 	#replace a bad channel 'c' with stat. noise derived from adjacent channels
 
-	for p in pol:
-		out_arr = np.array(a)
-		good_data = []
-		good_data = a[i,:,pol][f[i,:,pol] == 0]
+	#for p in range(f.shape[2]):
+	#good_data = []
+	good_data = a[c,:][f[c,:] == 0]
 
-		#define adjacent channels and clear ones that don't exist
-		adj_chans = [c-2,c-1,c+1,c+2]
+	#print(c)
+
+	#define adjacent channels and clear ones that don't exist
+	adj_chans = [c-3,c-2,c-1,c+1,c+2,c+3]
+	adj_chans = [i for i in adj_chans if i>=0]
+	adj_chans = [i for i in adj_chans if i<a.shape[0]]
+
+	#keep looking for data in adjacent channels if good_data empty
+	
+ 	#print('Pulling data from channels: {}'.format(adj_chans))
+	
+	for i in adj_chans:
+		good_data = np.append(good_data,a[i,:][f[i,:] == 0])
+	#good_data = np.array(good_data).flatten()
+
+	#keep looking for data in adjacent channels if good_data empty
+	adj=4
+	while (good_data.size==0):
+		adj_chans.extend([c-adj,c+adj])
+		#print(adj_chans)
 		adj_chans = [i for i in adj_chans if i>=0]
-		adj_chans = [i for i in adj_chans if i<a.shape[1]]
- 		#print('Pulling data from channels: {}'.format(adj_chans))
-	
+		adj_chans = [i for i in adj_chans if i<a.shape[0]]
+		#print(adj_chans)
+
+
 		for i in adj_chans:
-			good_data.extend(good_data = a[i,:,pol][f[i,:,pol] == 0])
-		good_data = np.array(good_data).flatten()
+			good_data = np.append(good_data,a[i,:][f[i,:] == 0])
+		#if (good_data.size>0):
+		#	break
+		#good_data = np.array(good_data).flatten()
+		adj += 1
+		#we gotta quit at some point, just give it flagged data
+		if adj == 30:
+			good_data = a[c,:]
+			break
 
-		ave_real = np.mean(good_data.real)
-		ave_imag = np.mean(good_data.imag)
-		std_real = np.std(good_data.real)
-		std_imag = np.std(good_data.imag)
-		
-		a[c,:,pol][f[i,:,pol] == 1].real = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
-		a[c,:,pol][f[i,:,pol] == 1].imag = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
-		
+	good_data = np.array(good_data).flatten()
 
-		#out_arr[c,:].real = np.random.normal(ave_real,std_real,out_arr.shape[1])
-		#out_arr[c,:].imag = np.random.normal(ave_imag,std_imag,out_arr.shape[1])
+	ave_real = np.mean(good_data.real)
+	ave_imag = np.mean(good_data.imag)
+	std_real = np.std(good_data.real)
+	std_imag = np.std(good_data.imag)
+
+
 	
-	return a
+	return ave_real,ave_imag,std_real,std_imag
 
 
 
