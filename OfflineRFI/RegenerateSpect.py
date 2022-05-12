@@ -8,10 +8,7 @@ data replacement effectiveness
 github.com/etsmit/seraproj
 
  - Opens GUPPI/VPM raw file 
- - performs SK
- - gibs flags
- - replaces flagged data
- - gibs copy of data with flagged data replaced (optional 
+ - Averages every M spectra and makes output npy array
 
 Use instructions:
 
@@ -26,16 +23,10 @@ Inputs
   -i INFILE             String. Required. Name of input filename.
                         Automatically pulls from standard data directory. If
                         leading "/" given, pulls from given directory
-  -rfi {SKurtosis,SEntropy}
-                        String. Required. RFI detection method desired.
   -m SK_INTS            Integer. Required. "M" in the SK equation. Number of
                         data points to perform SK on at once/average together
                         for spectrogram. ex. 1032704 (length of each block)
                         has prime divisors (2**9) and 2017. Default 512.
-  -r {zeros,previousgood,stats}
-                        String. Required. Replacement method of flagged data
-                        in output raw data file. Can be
-                        "zeros","previousgood", or "stats"
   -s SIGMA              Float. Sigma thresholding value. Default of 3.0 gives
                         probability of false alarm 0.001349
   -n N                  Integer. Number of inside accumulations, "N" in the SK
@@ -93,7 +84,7 @@ from RFI_support import *
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz
 npy_dir = '/home/scratch/esmith/RFI_MIT/npy_test/'#to save (not data) results to
 #out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
-my_dir = '/data/scratch/Spring2020/'
+my_dir = '/data/scratch/Summer2022/'
 out_dir = my_dir 
 
 
@@ -103,17 +94,15 @@ parser = argparse.ArgumentParser(description="""function description""")
 #input file
 parser.add_argument('-i',dest='infile',type=str,required=True,help='String. Required. Name of input filename. Automatically pulls from standard data directory. If leading "/" given, pulls from given directory')
 
-#RFI detection method
-parser.add_argument('-rfi',dest='RFI',type=str,required=True,choices=['SKurtosis','SEntropy'],default='SKurtosis',help='String. Required. RFI detection method desired.')
+
 
 #SK integrations. 'M' in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. FYI 1032704 (length of each block) has prime divisors (2**9) and 2017.
 parser.add_argument('-m',dest='SK_ints',type=int,required=True,default=512,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
 
 
-#replacement method
-parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", or "stats"')
 
 
+#----
 
 #sigma thresholding
 parser.add_argument('-s',dest='sigma',type=float,default=3.0,help='Float. Sigma thresholding value. Default of 3.0 gives probability of false alarm 0.001349')
@@ -139,7 +128,6 @@ parser.add_argument('-npy',dest='rawdata',type=bool,default=False,help='Boolean.
 args = parser.parse_args()
 infile = args.infile
 SK_ints = args.SK_ints
-method = args.method
 rawdata = args.rawdata
 sigma = args.sigma
 n = args.n
@@ -149,7 +137,6 @@ if v_s != '0':
 	in_dir = in_dir+'vegas/AGBT19B_335_0'+v_s+'/VEGAS/'+v_b+'/'
 output_bool = args.output_bool
 d = args.d
-rfi = args.RFI
 
 
 
@@ -169,13 +156,12 @@ if infile[-4:] != '.raw':
 #--------------------------------------
 
 
-base = npy_dir+infile[len(in_dir):-4]
+#base = npy_dir+infile[len(in_dir):-4]
+base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
-flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
-spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'.npy'
+spect_filename = base+'_regen_m'+str(SK_ints)+'.npy'
 
 print(spect_filename)
 
@@ -196,8 +182,6 @@ if rawdata:
 	print('Saving raw data to npy block style files')
 
 #init copy of file for replaced data
-print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+infile[-4:]
 
 
 
@@ -296,8 +280,6 @@ for block in range(numblocks):
 		start = k*SK_ints
 		end = (k+1)*SK_ints
 		data_chunk = data[:,start:end,:]
-
-		sk_spect = np.zeros((num_coarsechan,2))
 
 		#square it
 		data_chunk = np.abs(data_chunk)**2#abs value and square

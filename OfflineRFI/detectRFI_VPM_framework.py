@@ -249,12 +249,12 @@ for block in range(numblocks):
 	#======================================
 	#insert RFI detection of choice
 	#you currently have:
-	# data : 2D array of data from a single GUPPI/VPM block 'block'
+	# data : 3D array of data from a single GUPPI/VPM block 'block'
 	#	index [Channel,Spectrum,Polarization]
 	#	these are np.complex64 complex channelized voltages
 	#
 	#you need to output from this section:
-	# repl_chunk : 2D array of flags
+	# repl_chunk : 3D array of flags
 	#	same shape as data
 	#	0: unflagged || 1: flagged
 	#
@@ -265,7 +265,7 @@ for block in range(numblocks):
 	#
 	#======================================
 
-
+	np.save('')
 
 
 	#Replace data
@@ -274,8 +274,8 @@ for block in range(numblocks):
 	
 
 	#now flag shape is (chan,spectra,pol)
-	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
-	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
+	#repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
+	#repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
 	
 	#record flagging % in both polarizations
 	flagged_pts_p1 += (1./numblocks) * ((100.*np.count_nonzero(repl_chunk[:,:,0]))/repl_chunk[:,:,0].size)

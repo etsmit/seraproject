@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 from RFI_support import *
 
-#from numba import jit
+from numba import jit
 
 
 
@@ -35,6 +35,7 @@ from RFI_support import *
 
 #Compute SK on a 2D array of power values
 
+@jit(parallel=True)
 def SK_EST(a,m,n=1,d=1):
 	"""
 	Compute SK on a 2D array of power values.
@@ -70,6 +71,7 @@ def SK_EST(a,m,n=1,d=1):
 #multiscale variant
 #only takes n=1 for now
 #takes sum1 and sum2 as arguments rather than computing inside
+@jit(parallel=True)
 def ms_SK_EST(s1,s2,m,n=1,d=1):
 	"""
 	Multi-scale Variant of SK_EST.
@@ -112,7 +114,7 @@ def adj_chan_skflags(a,f,sk,a_sig,sk_sig):
 	a[a==0]=1e-3
 	loga = np.log10(a)
 
-	for pol in range(a.shape[2]):
+	for pol in prange(a.shape[2]):
 		for c in range(a.shape[0]):
 
 			#define adjacent channels and clear ones that don't exist

@@ -14,9 +14,9 @@ github.com/etsmit/seraproj
 
 Use instructions:
 
+ - psrenv preffered, or
  - python3.6.5
  - use /users/esmith/.conda/envs/py365 conda environment on green bank machine
-   - (desired environment psrenv doesn't import blimpy 9/28/20)
  - type ' -h' to see help message
 
 Inputs
@@ -25,7 +25,7 @@ Inputs
   -i INFILE             String. Required. Name of input filename.
                         Automatically pulls from standard data directory. If
                         leading "/" given, pulls from given directory
-  -rfi {SKurtosis,SEntropy}
+  -rfi {SKurtosis,SEntropy,IQRM}
                         String. Required. RFI detection method desired.
   -m SK_INTS            Integer. Required. "M" in the SK equation. Number of
                         data points to perform SK on at once/average together
@@ -52,6 +52,8 @@ Inputs
   -npy RAWDATA          Boolean. True to save raw data to npy files. This is
                         storage intensive and unnecessary since blimpy.
                         Default is False
+  -ms multiscale SK     String. Multiscale SK bin size. 
+                        2 ints : Channel size / Time size, ex '-ms 42' Default '11'
 
 
 
@@ -92,7 +94,7 @@ from RFI_support import *
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz
 #my_dir = '/home/scratch/esmith/RFI_MIT/testing/entropy/'#to save (not data) results to
 #out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
-my_dir = '/data/scratch/Spring2020/'
+my_dir = '/data/scratch/Summer2022/'
 out_dir = my_dir 
 
 
@@ -133,8 +135,12 @@ parser.add_argument('-d',dest='d',type=float,default=1.,help='Float. Shape param
 #Save raw data to npy files (storage intensive, unnecessary)
 parser.add_argument('-npy',dest='rawdata',type=bool,default=False,help='Boolean. True to save raw data to npy files. This is storage intensive and unnecessary since blimpy. Default is False')
 
-#Save raw data to npy files (storage intensive, unnecessary)
+#multiscale bin shape. currently only supports 1 digit each direction (up to 99)
 parser.add_argument('-ms',dest='ms',type=str,default=11,help='Multiscale SK. 2 ints : ChanSpec. Default 11')
+
+#custom filename tag (for adding info not already covered in lines 187
+parser.add_argument('-cust',dest='cust',type=str,default='',help='custom tag to add to end of filename')
+
 
 
 #parse input variables
@@ -155,6 +161,7 @@ rfi = args.RFI
 ms = args.ms
 ms0 = int(ms[0])
 ms1 = int(ms[1])
+cust = args.cust
 
 
 
@@ -179,10 +186,11 @@ base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR.npy'
-sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_SIR.npy'
-flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR.npy'
-spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_SIR.npy'
+ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
+ms_spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
+sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
+flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
+spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -202,7 +210,7 @@ if rawdata:
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_SIR'+infile[-4:]
+outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+infile[-4:]
 
 
 
@@ -218,7 +226,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	os.system('cp '+infile+' '+outfile)
+	#os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
@@ -233,6 +241,7 @@ numblocks = rawFile.find_n_data_blocks()
 print('File has '+str(numblocks)+' data blocks')
 
 
+#f_index = np.kron( np.arange(516608//SK_ints) , np.ones(SK_ints) ).astype(np.int8)
 
 for block in range(numblocks):
 	print('------------------------------------------')
@@ -241,7 +250,7 @@ for block in range(numblocks):
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
 	header,data = rawFile.read_next_data_block()
-
+	
 
 	
 
@@ -287,8 +296,8 @@ for block in range(numblocks):
 	SK_timebins = int(kept_samples/SK_ints)
 	print('Leading to '+str(SK_timebins)+' SK time bins')
 
-	if mismatch != 0:
-		data = data[:,:kept_samples,:]
+	#if mismatch != 0:
+	#	data = data[:,:kept_samples,:]
 	
 	#flipped = np.zeros(data.shape,dtype=np.complex64)
 	#flipped[:,:,0] = data[:,:,1]
@@ -353,9 +362,6 @@ for block in range(numblocks):
 	#ms_s2 = (s2[1:,1:,:] + s2[1:,:-1,:] + s2[:-1,1:,:]+s2[:-1,:-1,:])/4
 
 
-	print('int files saved')
-
-
 	#Multiscale SK
 	for k in range(SK_timebins-(ms1-1)):
 	
@@ -408,12 +414,12 @@ for block in range(numblocks):
 		#append to results
 		if (k==0):
 			ms_sk_block=np.expand_dims(sk_spect,axis=2)
-			#spect_block=np.expand_dims(spectrum,axis=2)
+			#ms_spect_block=np.expand_dims(spectrum,axis=2)
 			ms_flags_block = np.expand_dims(ms_flag_spect,axis=2)
 
 		else:
 			ms_sk_block=np.c_[ms_sk_block,np.expand_dims(sk_spect,axis=2)]
-			#spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
+			#ms_spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
 			ms_flags_block = np.c_[ms_flags_block,np.expand_dims(ms_flag_spect,axis=2)]
 
 
@@ -491,12 +497,18 @@ for block in range(numblocks):
 		sk_all = sk_block
 		ms_sk_all = ms_sk_block
 		spect_all = spect_block
+		ms_spect_all = ms_s1
 		flags_all = flags_block
 	else:
 		sk_all = np.c_[sk_all,sk_block]
 		ms_sk_all = np.c_[ms_sk_all,ms_sk_block]
 		spect_all = np.c_[spect_all,spect_block]
+		ms_spect_all = np.concatenate((ms_spect_all,ms_s1),axis=1)
 		flags_all = np.c_[flags_all,flags_block]
+
+	#print('shape check:')
+	#print(ms_spect_all.shape)
+	#print(ms_s1.shape)
 
 
 
@@ -508,14 +520,15 @@ for block in range(numblocks):
 	repl_chunk=np.transpose(flags_block,(0,2,1))
 	#now flag shape is (chan,spectra,pol)
 	#apply union of flags
+	print('sharing pol info')
 	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
 	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
 	
 	extend = np.ones((1,SK_ints,1))
-
+	print('kron..')
 	#extend flagging array
-	repl_chunk = np.kron(repl_chunk,extend)
-
+	repl_chunk = np.kron(repl_chunk,extend).astype(np.int8)
+	print('repl_chunk set...')
 	#sir flagging?
 	#for i in range(2):
 	#	repl_chunk[:,:,0] = sir(repl_chunk[:,:,0],0.2,0.2,'union')
@@ -532,7 +545,7 @@ for block in range(numblocks):
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
-		data = statistical_noise(data,repl_chunk,SK_ints)
+		data = statistical_noise(data,repl_chunk)
 
 	#Write back to block
 	if output_bool:
@@ -557,6 +570,8 @@ print('Final results shape: '+str(ms_sk_all.shape))
 np.save(ms_sk_filename, ms_sk_all)
 print('ms_SK spectra saved in {}'.format(ms_sk_filename))
 
+np.save(ms_spect_filename,ms_spect_all)
+print('ms_spect spectra saved in {}'.format(ms_spect_filename))
 
 
 
@@ -588,9 +603,12 @@ flagged_percent = (float(flagged_pts_p2)/tot_points)*100
 print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
 
 tot_points = flags_all.size
-flagged_pts_all = np.count_nonzero(flags_all)
+f_union = np.copy(flags_all)
+f_union[:,:,0][f_union[:,:,1]==1]=1
+f_union[:,:,1][f_union[:,:,0]==1]=1
+flagged_union_pts = (100.*np.count_nonzero(f_union))/f_union.size
 
-print('Union of flags: {}% of data flagged'.format((100.*flagged_pts_p1)/tot_points))
+print('Union of flags: {}% of data flagged'.format(flagged_union_pts))
 
 
 
