@@ -135,11 +135,14 @@ parser.add_argument('-d',dest='d',type=float,default=1.,help='Float. Shape param
 #Save raw data to npy files (storage intensive, unnecessary)
 parser.add_argument('-npy',dest='rawdata',type=bool,default=False,help='Boolean. True to save raw data to npy files. This is storage intensive and unnecessary since blimpy. Default is False')
 
-#multiscale bin shape. currently only supports 1 digit each direction (up to 99)
-parser.add_argument('-ms',dest='ms',type=str,default=11,help='Multiscale SK. 2 ints : ChanSpec. Default 11')
+#multiscale bin shape.
+parser.add_argument('-ms',dest='ms',type=str,default='1,1',help='Multiscale SK. 2 ints : ChanSpec. Put a comma between. Default "1,1"')
 
 #custom filename tag (for adding info not already covered in lines 187
 parser.add_argument('-cust',dest='cust',type=str,default='',help='custom tag to add to end of filename')
+
+#using multiple blocks at once to help stats replacement
+parser.add_argument('-mult',dest='mb',type=int,default=1,help='load multiple blocks at once to help with stats/prevgood replacement')
 
 
 
@@ -158,10 +161,11 @@ if v_s != '0':
 output_bool = args.output_bool
 d = args.d
 rfi = args.RFI
-ms = args.ms
+ms = (args.ms).split(',')
 ms0 = int(ms[0])
 ms1 = int(ms[1])
 cust = args.cust
+mb = args.mb
 
 
 
@@ -186,11 +190,21 @@ base = my_dir+infile[len(in_dir):-4]
 
 #filenames to save to
 #'p' stands for polarization
-ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
-ms_spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
-sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
-flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+'.npy'
-spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
+#ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
+#ms_spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
+#sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
+#flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
+#spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
+
+
+ms_sk_filename = f"{base}_SK_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_spect_filename = f"{base}_spect_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+sk_filename = f"{base}_SK_m{SK_ints}_{method}_s{sigma}_{rfi}_{cust}.npy"
+flags_filename = f"{base}_flags_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+spect_filename = f"{base}_spect_m{SK_ints}_{method}_s{sigma}_{rfi}_{cust}.npy"
+regen_filename = f"{base}_regen_m{SK_ints}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.npy"
+
+
 
 #threshold calc from sigma
 #defined by symmetric normal distribution
@@ -210,7 +224,7 @@ if rawdata:
 
 #init copy of file for replaced data
 print('Getting output datafile ready...')
-outfile = out_dir + infile[len(in_dir):-4]+'_'+method+'_m'+str(SK_ints)+'_s'+str(sigma)+'_'+rfi+'_ms'+ms+'_'+cust+infile[-4:]
+outfile = f"{out_dir}{infile[len(in_dir):-4]}_{method}_m{SK_ints}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
 
 
 
@@ -226,7 +240,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	#os.system('cp '+infile+' '+outfile)
+	os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
@@ -243,15 +257,39 @@ print('File has '+str(numblocks)+' data blocks')
 
 #f_index = np.kron( np.arange(516608//SK_ints) , np.ones(SK_ints) ).astype(np.int8)
 
-for block in range(numblocks):
+for block in range(numblocks//mb):
 	print('------------------------------------------')
-	print('Block: {}/{}'.format(block+1,numblocks))
+	print(f'Block: {(block*mb)+1}/{numblocks}')
 	if block == 0:
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
-	header,data = rawFile.read_next_data_block()
 	
+	for mb_i in range(mb):
+		if mb_i==0:
+			header,data = rawFile.read_next_data_block()
+			d1s = data.shape[1]
+		else:
+			h2,d2 = rawFile.read_next_data_block()
+			data = np.append(data,d2,axis=1)
+	#data = np.c_[d1,d2]
 
+	#for stats replacement: use another block of data for good points
+	#if (k==0):
+	#	header,data = rawFile.read_next_data_block()
+	#	prevhdr,prevdata = rawFile.read_next_data_block()
+
+	#if (k==1):
+	#	datamid = np.copy(data)
+	#	data = np.copy(prevdata)
+	#	prevdata = np.copy(datamid)
+	
+	#if (k>=2):
+	#	datamid = np.copy(data)
+	#	header,data = rawFile.read_next_data_block()
+	#	prevdata = np.copy(datamid)
+
+	#if (k != 1):
+	#	header,data = rawFile.read_next_data_block()
 	
 
 
@@ -261,8 +299,9 @@ for block in range(numblocks):
 		for line in header:
 			print(line+':  '+str(header[line]))
 
-	if output_bool:
-		out_rawFile.seek(headersize,1)
+	#moved to the end of each block loop
+	#if output_bool:
+	#	out_rawFile.seek(headersize,1)
 
 	num_coarsechan = data.shape[0]
 	num_timesamples= data.shape[1]
@@ -547,12 +586,48 @@ for block in range(numblocks):
 		#replace data with statistical noise derived from good datapoints
 		data = statistical_noise(data,repl_chunk)
 
+
+
+	for k in range(SK_timebins):
+	
+		#take the stream of correct data
+		start = k*SK_ints
+		end = (k+1)*SK_ints
+		data_chunk = data[:,start:end,:]
+
+
+		data_chunk = np.abs(data_chunk)**2#abs value and square
+
+		regen = np.average(data_chunk,axis=1)
+
+		if (k==0):
+			regen_block=np.expand_dims(regen,axis=2)
+		else:
+			regen_block=np.c_[regen_block,np.expand_dims(regen,axis=2)]
+
+
+
+	#print(block)
+	if (block==0):
+		regen_all = regen_block
+
+	else:
+
+		regen_all = np.c_[regen_all,regen_block]
+
+
+
+	
 	#Write back to block
 	if output_bool:
 		print('Re-formatting data and writing back to file...')
-		data = guppi_format(data)
-		out_rawFile.write(data.tostring())
-
+		for mb_i in range(mb):
+			out_rawFile.seek(headersize,1)
+			d1 = guppi_format(data[:,d1s*mb_i:d1s*(mb_i+1),:])
+			out_rawFile.write(d1.tostring())
+		#out_rawFile.seek(headersize,1)
+		#d2 = guppi_format(data[:,d1s:,:])
+		#out_rawFile.write(d1.tostring())
 
 
 #save SK results
@@ -578,13 +653,21 @@ print('ms_spect spectra saved in {}'.format(ms_spect_filename))
 #save spectrum results
 spect_all = np.transpose(spect_all,(0,2,1))
 np.save(spect_filename, spect_all)
-print('Spectra saved in {}'.format(spect_filename))
+print('Unmitigated spectra saved in {}'.format(spect_filename))
+
+
+#save mitigated results results
+regen_all = np.transpose(regen_all,(0,2,1))
+np.save(regen_filename, regen_all)
+print('Mitigated spectra saved in {}'.format(regen_filename))
 
 
 #save flags results
 flags_all = np.transpose(flags_all,(0,2,1))
 np.save(flags_filename,flags_all)
 print('Flags file saved to {}'.format(flags_filename))
+
+print(f"'{spect_filename}','{flags_filename}','{regen_filename}'")
 
 #thresholds again
 print('Upper Threshold: '+str(ut))

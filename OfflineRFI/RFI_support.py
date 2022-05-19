@@ -32,10 +32,10 @@ import scipy.special
 
 import matplotlib.pyplot as plt
 
-from numba import jit
+from numba import jit,prange
 
 
-
+from statsmodels.stats.weightstats import DescrStatsW
 
 
 
@@ -239,11 +239,11 @@ def statistical_noise(a,f):
 			#how many data points do we need to replace
 			bad_data_size = a[i,:,pol][f[i,:,pol] == 1].size
  
-
+			#print(a[:,:,pol].shape,f[:,:,pol].shape)
 			ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
 			#print('generating representative awgn..')
-			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
-			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
+			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size)#.astype(np.int8)
+			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size)#.astype(np.int8)
 	return a
 
 
@@ -278,21 +278,23 @@ def adj_chan_good_data(a,f,c):
 	#print(f[adj_chans,:].shape)
 	#print(f[adj_chans,f_index].shape)
 	#for i in adj_chans:
+	#wt_inds=[0]
+	#good_data = np.append(good_data,a[c,:][f[c,:] == 0])
+	#wt_inds.append(good_data.size)
 	good_data = np.append(good_data,a[adj_chans,:][f[adj_chans,:] == 0])
-	#good_data = np.array(good_data).flatten()
-
+	#wt_inds.append(good_data.size)
+	adj=1
 	#keep looking for data in adjacent channels if good_data empty
-	adj=2
 	while (good_data.size==0):
+		adj += 1
 		if (c-adj >= 0):
 			good_data = np.append(good_data,a[c-adj,:][f[c-adj,:] == 0])
 		if (c+adj < a.shape[0]):
 			good_data = np.append(good_data,a[c+adj,:][f[c+adj,:] == 0])
-
+		#wt_inds.append(good_data.size)
 		#if (good_data.size>0):
 		#	break
 		#good_data = np.array(good_data).flatten()
-		adj += 1
 		#we gotta quit at some point, just give it flagged data from same channel
 		if adj == 30:
 			good_data = a[c,:]
@@ -300,6 +302,19 @@ def adj_chan_good_data(a,f,c):
 	#print(adj)
 
 	#good_data = np.array(good_data).flatten()
+	#wt_lvls = np.hamming(1 + (2*adj))[adj:]
+	#wts = np.empty(good_data.size)
+	#for ii in range(len(wt_lvls)-1):
+	#	wts[wt_inds[ii]:wt_inds[ii+1]] = wt_lvls[ii]
+
+	#weighted average/vars based on channel distance from chan c
+	#gdr = DescrStatsW(good_data.real,weights=wts)
+	#gdi = DescrStatsW(good_data.imag,weights=wts)
+	#ave_real = gdr.mean
+	#ave_imag = gdi.mean
+	#std_real = gdr.std
+	#std_imag = gdi.std
+
 
 	ave_real = np.mean(good_data.real)
 	ave_imag = np.mean(good_data.imag)

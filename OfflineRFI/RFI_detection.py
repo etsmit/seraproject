@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 from RFI_support import *
 
-from numba import jit
+from numba import jit,prange
 
 
 
