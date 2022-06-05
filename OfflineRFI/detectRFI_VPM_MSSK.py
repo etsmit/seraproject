@@ -27,7 +27,7 @@ Inputs
                         leading "/" given, pulls from given directory
   -rfi {SKurtosis,SEntropy,IQRM}
                         String. Required. RFI detection method desired.
-  -m SK_INTS            Integer. Required. "M" in the SK equation. Number of
+  -m SK_M               Integer. Required. "M" in the SK equation. Number of
                         data points to perform SK on at once/average together
                         for spectrogram. ex. 1032704 (length of each block)
                         has prime divisors (2**9) and 2017. Default 512.
@@ -54,12 +54,10 @@ Inputs
                         Default is False
   -ms multiscale SK     String. Multiscale SK bin size. 
                         2 ints : Channel size / Time size, ex '-ms 42' Default '11'
+  -mb mb		For loading multiple blocks at once. Helps with finding good
+                        data for replacing flagged data, but can balloon RAM usage. 
+                        Default 1.
 
-
-
-
-#Note - for 128 4GB blocks and SK_ints=512, expect ~16-17GB max memory usage.
-#Lowering SK_ints increases memory usage slightly less than linearly
 #Assumes two polarizations
 #see RFI_detect.py and RFI_support.py for functions used
 """
@@ -89,13 +87,10 @@ from RFI_support import *
 # Inputs
 #--------------------------------------
 
-#in_dir = '/export/home/ptcs/scratch/raw_RFI_data/'#assuming maxwell
-#in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#assuming lustre access machines
+#in_dir = '/export/home/ptcs/scratch/raw_RFI_data/'#using maxwell (no longer available?)
+#in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#using lustre (no longer available)
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz
-#my_dir = '/home/scratch/esmith/RFI_MIT/testing/entropy/'#to save (not data) results to
-#out_dir = '/export/home/ptcs/scratch/raw_RFI_data/gpu1/evan_testing/'#copies to a folder on maxwell (new ptcs)
-my_dir = '/data/scratch/Summer2022/'
-out_dir = my_dir 
+out_dir = '/data/scratch/Summer2022/'#leibniz
 
 
 #argparse parsing
@@ -108,7 +103,7 @@ parser.add_argument('-i',dest='infile',type=str,required=True,help='String. Requ
 parser.add_argument('-rfi',dest='RFI',type=str,required=True,choices=['SKurtosis','SEntropy'],default='SKurtosis',help='String. Required. RFI detection method desired.')
 
 #SK integrations. 'M' in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. FYI 1032704 (length of each block) has prime divisors (2**9) and 2017.
-parser.add_argument('-m',dest='SK_ints',type=int,required=True,default=512,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
+parser.add_argument('-m',dest='SK_M',type=int,required=True,default=512,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
 
 
 #replacement method
@@ -149,7 +144,7 @@ parser.add_argument('-mult',dest='mb',type=int,default=1,help='load multiple blo
 #parse input variables
 args = parser.parse_args()
 infile = args.infile
-SK_ints = args.SK_ints
+SK_M = args.SK_M
 method = args.method
 rawdata = args.rawdata
 sigma = args.sigma
@@ -168,9 +163,6 @@ cust = args.cust
 mb = args.mb
 
 
-
-
-
 #input file
 #pulls from my scratch directory if full path not given
 if infile[0] != '/':
@@ -179,53 +171,38 @@ else:
 	in_dir = infile[:infile.index('/')+1]
 
 if infile[-4:] != '.raw':
-	print("WARNING input filename doesn't end in '.raw'. Auto-generated output files will have weird names.")
+	print("WARNING input filename doesn't end in '.raw'. Are you sure you want to use this file?")
 
 #--------------------------------------
 # Inits
 #--------------------------------------
 
 
-base = my_dir+infile[len(in_dir):-4]
+base = out_dir+infile[len(in_dir):-4]
 
 #filenames to save to
-#'p' stands for polarization
-#ms_sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
-#ms_spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
-#sk_filename = base+'_SK_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
-#flags_filename = base+'_flags_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_ms'+ms0+'-'+ms1+'_'+cust+'.npy'
-#spect_filename = base+'_spect_m'+str(SK_ints)+'_'+method+'_s'+str(sigma)+'_'+rfi+'_'+cust+'.npy'
-
-
-ms_sk_filename = f"{base}_SK_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-ms_spect_filename = f"{base}_spect_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-sk_filename = f"{base}_SK_m{SK_ints}_{method}_s{sigma}_{rfi}_{cust}.npy"
-flags_filename = f"{base}_flags_m{SK_ints}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-spect_filename = f"{base}_spect_m{SK_ints}_{method}_s{sigma}_{rfi}_{cust}.npy"
-regen_filename = f"{base}_regen_m{SK_ints}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.npy"
-
+ms_sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
+flags_filename = f"{base}_flags_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
+regen_filename = f"{base}_regen_m{SK_M}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.npy"
+outfile = f"{out_dir}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
 
 
 #threshold calc from sigma
-#defined by symmetric normal distribution
 SK_p = (1-scipy.special.erf(sigma/math.sqrt(2))) / 2
 print('Probability of false alarm: {}'.format(SK_p))
 
 #calculate thresholds
 print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_ints-(ms1-1), N = n, d = d, p = SK_p)
+lt, ut = SK_thresholds(SK_M-(ms1-1), N = n, d = d, p = SK_p)
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
 
 
-
 if rawdata:
 	print('Saving raw data to npy block style files')
-
-#init copy of file for replaced data
-print('Getting output datafile ready...')
-outfile = f"{out_dir}{infile[len(in_dir):-4]}_{method}_m{SK_ints}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
-
 
 
 #--------------------------------------
@@ -236,11 +213,10 @@ outfile = f"{out_dir}{infile[len(in_dir):-4]}_{method}_m{SK_ints}_s{sigma}_{rfi}
 start_time = time.time()
 
 
-
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	os.system('cp '+infile+' '+outfile)
+	#os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
@@ -253,45 +229,32 @@ print('Loading copy...')
 
 numblocks = rawFile.find_n_data_blocks()
 print('File has '+str(numblocks)+' data blocks')
+#check for mismatched amount of blocks
+mismatch = numblocks % mb
+if (mismatch != 0):
+	print(f'There are {numblocks} blocks and you set -mb {mb}, pick a divisible integer')
+	#exit()
 
-
-#f_index = np.kron( np.arange(516608//SK_ints) , np.ones(SK_ints) ).astype(np.int8)
 
 for block in range(numblocks//mb):
 	print('------------------------------------------')
 	print(f'Block: {(block*mb)+1}/{numblocks}')
+	#print header for the first block
 	if block == 0:
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
-	
+
+	#loading multiple blocks at once?	
 	for mb_i in range(mb):
 		if mb_i==0:
 			header,data = rawFile.read_next_data_block()
+			#length in spectra of one block, for use during rewriting mit. data
 			d1s = data.shape[1]
 		else:
 			h2,d2 = rawFile.read_next_data_block()
 			data = np.append(data,d2,axis=1)
-	#data = np.c_[d1,d2]
 
-	#for stats replacement: use another block of data for good points
-	#if (k==0):
-	#	header,data = rawFile.read_next_data_block()
-	#	prevhdr,prevdata = rawFile.read_next_data_block()
-
-	#if (k==1):
-	#	datamid = np.copy(data)
-	#	data = np.copy(prevdata)
-	#	prevdata = np.copy(datamid)
-	
-	#if (k>=2):
-	#	datamid = np.copy(data)
-	#	header,data = rawFile.read_next_data_block()
-	#	prevdata = np.copy(datamid)
-
-	#if (k != 1):
-	#	header,data = rawFile.read_next_data_block()
-	
-
+	#data is channelized voltages
 
 	#print header for the first block
 	if block == 0:
@@ -299,143 +262,91 @@ for block in range(numblocks//mb):
 		for line in header:
 			print(line+':  '+str(header[line]))
 
-	#moved to the end of each block loop
-	#if output_bool:
-	#	out_rawFile.seek(headersize,1)
 
+	#find data shape
 	num_coarsechan = data.shape[0]
 	num_timesamples= data.shape[1]
-	# ^^^ FYI these are time samples of voltage corresponding to a certain frequency
-	# See the notebook drawing on pg 23
-	# FFT has already happened in the roaches
 	num_pol = data.shape[2]
-
 	print('Data shape: {} || block size: {}'.format(data.shape,data.nbytes))
 
-	#save raw data
+	#save raw data?
 	if rawdata:
 		#pad number to three digits
 		block_fname = str(block).zfill(3)
-
 		save_fname = base+'_block'+block_fname+'.npy'
 		np.save(save_fname,data)
 		#print('Saved under '+out_dir+save_fname)
 
 
 
-	#Check to see if SK_ints divides the total amount of data points
-	mismatch = num_timesamples % SK_ints
-	if mismatch != 0:
-		print('Warning: SK_ints does not divide the amount of time samples')
-		print(str(mismatch)+' time samples at the end will be dropped')
-		print('Recommend SK_ints is a power of 2 up to 512 or 2017 for 1032704 datapoints')
-	kept_samples = int(num_timesamples- mismatch)
-	
-	print('There are {} time samples left and you inputted {} as m'.format(kept_samples,SK_ints))
-	SK_timebins = int(kept_samples/SK_ints)
-	print('Leading to '+str(SK_timebins)+' SK time bins')
+	#Check to see if SK_M divides the total amount of data points
+	mismatch = num_timesamples % SK_M
+	if (mismatch != 0):
+		print('Warning: SK_M does not divide the amount of time samples')
+		#exit()
 
-	#if mismatch != 0:
-	#	data = data[:,:kept_samples,:]
 	
-	#flipped = np.zeros(data.shape,dtype=np.complex64)
-	#flipped[:,:,0] = data[:,:,1]
-	#flipped[:,:,1] = data[:,:,0]
-	#data = np.array(flipped)
-	#flipped = None
+	print('There are {} time samples and you input {} as m'.format(num_timesamples,SK_M))
+	num_SKbins = int(num_timesamples/SK_M)
+	print('Leading to '+str(num_SKbins)+' SK time bins')
 
 
 	#Calculations
 
 	#ASSUMING NPOL = 2:
-	s1 = np.zeros((num_coarsechan,SK_timebins,2))
-	s2 = np.zeros((num_coarsechan,SK_timebins,2))
+	s1 = np.zeros((num_coarsechan,SK_M,2))
+	s2 = np.zeros((num_coarsechan,SK_M,2))
 
 
 	#make s1 and s2 arrays, as well as avg spects
-	for k in range(SK_timebins):
+	for k in range(num_SKbins):
 	
 		#take the stream of correct data
-
-
-		start = k*SK_ints
-		end = (k+1)*SK_ints
+		start = k*SK_M
+		end = (k+1)*SK_M
 		data_chunk = data[:,start:end,:]
 
 		data_chunk = np.abs(data_chunk)**2
 		a = np.array(data_chunk)
 		a2 = a**2
 
-		#ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
-		#ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
-
 		s1[:,k,:] = np.sum(a,axis=1)
 		s2[:,k,:] = np.sum(a2,axis=1)
-
-		#spectrum = np.average(data_chunk,axis=1)
-
-		#if (k==0):
-		#	spect_block=np.expand_dims(spectrum,axis=2)
-
-		#else:
-		#	spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
 
 
 	#make ms_s1 and ms_s2 arrays out of those by binning
 	ms_binsize = ms0*ms1
-
-	ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
-	ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_timebins-(ms1-1),2))
+	ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_M-(ms1-1),2))
+	ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_M-(ms1-1),2))
 	
 	for ichan in range(ms0):
 		for itime in range(ms1):
-			#print('--------')
-			#print(ms_s1.shape)
-			#print(ms_binsize)
-			#print(s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_ints-(ms1-1)),:].shape)
-			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_timebins-(ms1-1)),:])
-			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_timebins-(ms1-1)),:])
-
-	#deprecated, for 2x2 bins
-	#ms_s1 = (s1[1:,1:,:] + s1[1:,:-1,:] + s1[:-1,1:,:]+s1[:-1,:-1,:])/4
-	#ms_s2 = (s2[1:,1:,:] + s2[1:,:-1,:] + s2[:-1,1:,:]+s2[:-1,:-1,:])/4
+			
+			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_M-(ms1-1)),:])
+			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_M-(ms1-1)),:])
 
 
-	#Multiscale SK
-	for k in range(SK_timebins-(ms1-1)):
+	#perform multiscale SK
+	for k in range(num_SKbins-(ms1-1)):
 	
-		#take the stream of correct data
-
-
-		start = k*SK_ints
-		end = (k+1)*SK_ints
-		data_chunk = data[:,start:end,:]
-
 
 		sk_spect = np.zeros((num_coarsechan-(ms0-1),2))
-
-		#square it
-		data_chunk = np.abs(data_chunk)**2#abs value and square
 
 		#perform RFI detection
 		if (rfi == 'SKurtosis'):
 			#print(ms_s1.shape)
 			#print(ms_s2.shape)
-			sk_spect[:,0] = ms_SK_EST(ms_s1[:,k,0],ms_s2[:,k,0],SK_ints-(ms1-1),n,d)
-			sk_spect[:,1] = ms_SK_EST(ms_s1[:,k,1],ms_s2[:,k,1],SK_ints-(ms1-1),n,d)
+			sk_spect[:,0] = ms_SK_EST(ms_s1[:,k,0],ms_s2[:,k,0],SK_M-(ms1-1),n,d)
+			sk_spect[:,1] = ms_SK_EST(ms_s1[:,k,1],ms_s2[:,k,1],SK_M-(ms1-1),n,d)
 			#init flag chunk
-			#plt.hist(sk_spect.flatten(),bins=40)
-			#plt.show()
 			ms_flag_spect = np.zeros((num_coarsechan-(ms0-1),2),dtype=np.int8)
 			#flag (each pol separately, for records)
-			#flag_spect[sk_spect>ut] = 1
 			ms_flag_spect[sk_spect>ut] = 1
 			ms_flag_spect[sk_spect<lt] = 1
-			#print('{}/{}'.format(np.count_nonzero(ms_flag_spect[:,0]),np.count_nonzero(ms_flag_spect[:,1])))
-			#flag_spect[:-(ms1-1)][sk_spect>ut] = 1
-			#flag_spect[sk_spect<lt] = 1
+
 
 		elif (rfi == 'SEntropy'):
+			#not done?
 			sk_spect[:,0] = entropy(data_chunk[:,:,0])
 			sk_spect[:,1] = entropy(data_chunk[:,:,1])
 			#init flag chunk
@@ -445,45 +356,39 @@ for block in range(numblocks//mb):
 			#flag_spect[sk_spect<lt] = 1
 
 
-		#average power spectrum
-		#spectrum = np.average(data_chunk,axis=1)
-
 		
-
 		#append to results
 		if (k==0):
 			ms_sk_block=np.expand_dims(sk_spect,axis=2)
-			#ms_spect_block=np.expand_dims(spectrum,axis=2)
 			ms_flags_block = np.expand_dims(ms_flag_spect,axis=2)
 
 		else:
 			ms_sk_block=np.c_[ms_sk_block,np.expand_dims(sk_spect,axis=2)]
-			#ms_spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
 			ms_flags_block = np.c_[ms_flags_block,np.expand_dims(ms_flag_spect,axis=2)]
 
 
 	#adj_chan flagging here
 	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
 
-	#individual SK
-	for k in range(SK_timebins):
+	#single scale SK
+	for k in range(num_SKbins):
 	
 		#take the stream of correct data
-		start = k*SK_ints
-		end = (k+1)*SK_ints
+		start = k*SK_M
+		end = (k+1)*SK_M
 		data_chunk = data[:,start:end,:]
 
 		sk_spect = np.zeros((num_coarsechan,2))
 
 		#square it
-		data_chunk = np.abs(data_chunk)**2#abs value and square
+		data_chunk = np.abs(data_chunk)**2
 
 		spectrum = np.average(data_chunk,axis=1)
 
 		#perform RFI detection
 		if (rfi == 'SKurtosis'):
-			sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_ints,n,d)
-			sk_spect[:,1] = SK_EST(data_chunk[:,:,1],SK_ints,n,d)
+			sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_M,n,d)
+			sk_spect[:,1] = SK_EST(data_chunk[:,:,1],SK_M,n,d)
 			#init flag chunk
 			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
 			#flag (each pol separately, for records)
@@ -503,35 +408,27 @@ for block in range(numblocks//mb):
 
 
 
-
-
-
-
-
+	#print flagged percentage for both pols from single scale SK
 	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
 
+	#print flagged percentage for both pols from multi scale SK
 	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,0,:])/ms_flags_block[:,1,:].size),(100.*np.count_nonzero(ms_flags_block[:,1,:])/ms_flags_block[:,1,:].size)))
 
 
-	#flags_block = np.zeros((num_coarsechan,2,SK_timebins))
-
+	#apply union of single scale and multiscale flag masks
+	#(each ms flag pixel covers several single scale pixels)
 	for ichan in range(ms0):
 		for itime in range(ms1):
 			#print(flags_block.shape)
 			#print(ms_flags_block.shape)
-			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),:,itime:itime+(SK_timebins-(ms1-1))][ms_flags_block==1] = 1
+			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),:,itime:itime+(num_SKbins-(ms1-1))][ms_flags_block==1] = 1
 
 
-
-	#flags_block[1:,:,1:][ms_flags_block==1]=1
-	#flags_block[1:,:,:-1][ms_flags_block==1]=1
-	#flags_block[:-1,:,1:][ms_flags_block==1]=1
-	#flags_block[:-1,:,:-1][ms_flags_block==1]=1
-	#print(flags_block.shape)
+	#print flagged percentage for both pols from union of ss and ms SK
 	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
 
 
-	#print(block)
+
 	if (block==0):
 		sk_all = sk_block
 		ms_sk_all = ms_sk_block
@@ -545,29 +442,27 @@ for block in range(numblocks//mb):
 		ms_spect_all = np.concatenate((ms_spect_all,ms_s1),axis=1)
 		flags_all = np.c_[flags_all,flags_block]
 
-	#print('shape check:')
-	#print(ms_spect_all.shape)
-	#print(ms_s1.shape)
-
-
-
 
 	#Replace data
 	print('Calculations complete...')
 	print('Replacing Data...')
 	
 	repl_chunk=np.transpose(flags_block,(0,2,1))
+	print(repl_chunk.shape)
+	print('transposed')
 	#now flag shape is (chan,spectra,pol)
-	#apply union of flags
-	print('sharing pol info')
+	#apply union of flags across pols
 	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
 	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
+	print('union')
+
 	
-	extend = np.ones((1,SK_ints,1))
-	print('kron..')
-	#extend flagging array
+	#extend flagging array to be same size as raw data
+	extend = np.ones((1,SK_M,1),dtype=np.int8)
+	print('extend')
 	repl_chunk = np.kron(repl_chunk,extend).astype(np.int8)
 	print('repl_chunk set...')
+	print(repl_chunk.shape,data.shape)
 	#sir flagging?
 	#for i in range(2):
 	#	repl_chunk[:,:,0] = sir(repl_chunk[:,:,0],0.2,0.2,'union')
@@ -580,7 +475,7 @@ for block in range(numblocks//mb):
 
 	if method == 'previousgood':
 		#replace data with previous (or next) good
-		data = previous_good(data,repl_chunk,SK_ints)
+		data = previous_good(data,repl_chunk,SK_M)
 
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
@@ -588,11 +483,12 @@ for block in range(numblocks//mb):
 
 
 
-	for k in range(SK_timebins):
+	#generate averaged datafile from replaced data
+	for k in range(num_SKbins):
 	
 		#take the stream of correct data
-		start = k*SK_ints
-		end = (k+1)*SK_ints
+		start = k*SK_M
+		end = (k+1)*SK_M
 		data_chunk = data[:,start:end,:]
 
 
@@ -605,24 +501,20 @@ for block in range(numblocks//mb):
 		else:
 			regen_block=np.c_[regen_block,np.expand_dims(regen,axis=2)]
 
-
-
-	#print(block)
 	if (block==0):
 		regen_all = regen_block
-
 	else:
-
 		regen_all = np.c_[regen_all,regen_block]
 
 
 
-	
-	#Write back to block
+	#Write back to copied raw file
 	if output_bool:
 		print('Re-formatting data and writing back to file...')
 		for mb_i in range(mb):
 			out_rawFile.seek(headersize,1)
+			print(d1s*mb_i,d1s*(mb_i+1))
+			print(data[:,d1s*mb_i:d1s*(mb_i+1),:].shape)
 			d1 = guppi_format(data[:,d1s*mb_i:d1s*(mb_i+1),:])
 			out_rawFile.write(d1.tostring())
 		#out_rawFile.seek(headersize,1)

@@ -242,8 +242,8 @@ def statistical_noise(a,f):
 			#print(a[:,:,pol].shape,f[:,:,pol].shape)
 			ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
 			#print('generating representative awgn..')
-			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size)#.astype(np.int8)
-			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size)#.astype(np.int8)
+			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
+			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
 	return a
 
 
@@ -320,7 +320,8 @@ def adj_chan_good_data(a,f,c):
 	ave_imag = np.mean(good_data.imag)
 	std_real = np.std(good_data.real)
 	std_imag = np.std(good_data.imag)
-	#print(ave_real,ave_imag,std_real,std_imag)
+	#if (c==240):
+	#	print(ave_real,ave_imag,std_real,std_imag)
 
 
 	
