@@ -65,6 +65,31 @@ def SK_EST(a,m,n=1,d=1):
 	return sk_est
 
 
+@jit(parallel=True)
+def SK_EST_alt(s1,s2,m,n=1,d=1):
+	"""
+	Compute SK on a 2D array of power values, using s1 and s2 given instead of data
+
+	Parameters
+	-----------
+
+	n : int
+		integer value of N in the SK function. Inside accumulations of spectra.
+	m : int
+		integer value of M in the SK function. Outside accumulations of spectra.
+	d : float
+		shape parameter d in the SK function. Usually 1 but can be empirically determined.
+	
+	Returns
+	-----------
+	out : ndarray
+		Spectrum of SK values.
+	"""
+	sk_est = ((m*n*d+1)/(m-1))*(((m*s2)/(s1**2))-1)                     
+	return sk_est
+
+
+
 
 
 

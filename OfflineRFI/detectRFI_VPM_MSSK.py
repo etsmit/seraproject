@@ -216,7 +216,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	#os.system('cp '+infile+' '+outfile)
+	os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
@@ -294,8 +294,8 @@ for block in range(numblocks//mb):
 	#Calculations
 
 	#ASSUMING NPOL = 2:
-	s1 = np.zeros((num_coarsechan,SK_M,2))
-	s2 = np.zeros((num_coarsechan,SK_M,2))
+	s1 = np.zeros((num_coarsechan,num_SKbins,2))
+	s2 = np.zeros((num_coarsechan,num_SKbins,2))
 
 
 	#make s1 and s2 arrays, as well as avg spects
@@ -307,23 +307,37 @@ for block in range(numblocks//mb):
 		data_chunk = data[:,start:end,:]
 
 		data_chunk = np.abs(data_chunk)**2
-		a = np.array(data_chunk)
-		a2 = a**2
 
-		s1[:,k,:] = np.sum(a,axis=1)
-		s2[:,k,:] = np.sum(a2,axis=1)
+		s1[:,k,:] = np.sum(data_chunk,axis=1)
+		s2[:,k,:] = np.sum(data_chunk**2,axis=1)
 
+
+		#square it
+		spectrum = np.average(data_chunk,axis=1)
+
+
+		if (k==0):
+			spect_block=np.expand_dims(spectrum,axis=2)
+		else:
+			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
+
+	#do singlescale SK flagging
+	sk_block = SK_EST_alt(s1,s2,SK_M,n=1,d=1)
+	flags_block = np.zeros(sk_block.shape,dtype=np.int8)
+	flags_block[sk_block>ut] = 1
+	flags_block[sk_block<lt] = 1
 
 	#make ms_s1 and ms_s2 arrays out of those by binning
 	ms_binsize = ms0*ms1
-	ms_s1 = np.zeros((a.shape[0]-(ms0-1),SK_M-(ms1-1),2))
-	ms_s2 = np.zeros((a.shape[0]-(ms0-1),SK_M-(ms1-1),2))
+	ms_s1 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
+	ms_s2 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
 	
+
+	#make multiscale S1, S2
 	for ichan in range(ms0):
 		for itime in range(ms1):
-			
-			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_M-(ms1-1)),:])
-			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(SK_M-(ms1-1)),:])
+			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
+			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
 
 
 	#perform multiscale SK
@@ -369,50 +383,14 @@ for block in range(numblocks//mb):
 
 	#adj_chan flagging here
 	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
-
-	#single scale SK
-	for k in range(num_SKbins):
 	
-		#take the stream of correct data
-		start = k*SK_M
-		end = (k+1)*SK_M
-		data_chunk = data[:,start:end,:]
-
-		sk_spect = np.zeros((num_coarsechan,2))
-
-		#square it
-		data_chunk = np.abs(data_chunk)**2
-
-		spectrum = np.average(data_chunk,axis=1)
-
-		#perform RFI detection
-		if (rfi == 'SKurtosis'):
-			sk_spect[:,0] = SK_EST(data_chunk[:,:,0],SK_M,n,d)
-			sk_spect[:,1] = SK_EST(data_chunk[:,:,1],SK_M,n,d)
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			flag_spect[sk_spect>ut] = 1
-			flag_spect[sk_spect<lt] = 1
-
-		if (k==0):
-			sk_block=np.expand_dims(sk_spect,axis=2)
-			spect_block=np.expand_dims(spectrum,axis=2)
-			flags_block = np.expand_dims(flag_spect,axis=2)
-
-		else:
-			sk_block=np.c_[sk_block,np.expand_dims(sk_spect,axis=2)]
-			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
-			flags_block = np.c_[flags_block,np.expand_dims(flag_spect,axis=2)]
-
-
-
+	ms_flags_block = np.transpose(ms_flags_block,(0,2,1))
 
 	#print flagged percentage for both pols from single scale SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
 
 	#print flagged percentage for both pols from multi scale SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,0,:])/ms_flags_block[:,1,:].size),(100.*np.count_nonzero(ms_flags_block[:,1,:])/ms_flags_block[:,1,:].size)))
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,:,0])/ms_flags_block[:,:,1].size),(100.*np.count_nonzero(ms_flags_block[:,:,1])/ms_flags_block[:,:,1].size)))
 
 
 	#apply union of single scale and multiscale flag masks
@@ -421,11 +399,11 @@ for block in range(numblocks//mb):
 		for itime in range(ms1):
 			#print(flags_block.shape)
 			#print(ms_flags_block.shape)
-			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),:,itime:itime+(num_SKbins-(ms1-1))][ms_flags_block==1] = 1
+			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:][ms_flags_block==1] = 1
 
 
 	#print flagged percentage for both pols from union of ss and ms SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,0,:])/flags_block[:,1,:].size),(100.*np.count_nonzero(flags_block[:,1,:])/flags_block[:,1,:].size)))
+	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
 
 
 
@@ -447,7 +425,7 @@ for block in range(numblocks//mb):
 	print('Calculations complete...')
 	print('Replacing Data...')
 	
-	repl_chunk=np.transpose(flags_block,(0,2,1))
+	repl_chunk=np.copy(flags_block)
 	print(repl_chunk.shape)
 	print('transposed')
 	#now flag shape is (chan,spectra,pol)
@@ -480,7 +458,6 @@ for block in range(numblocks//mb):
 	if method == 'stats':
 		#replace data with statistical noise derived from good datapoints
 		data = statistical_noise(data,repl_chunk)
-
 
 
 	#generate averaged datafile from replaced data
@@ -523,41 +500,39 @@ for block in range(numblocks//mb):
 
 
 #save SK results
-sk_all = np.transpose(sk_all,(0,2,1))
-print('Final results shape: '+str(sk_all.shape))
+
 
 np.save(sk_filename, sk_all)
-print('SK spectra saved in {}'.format(sk_filename))
+print(f'{sk_all.shape} SK spectra saved in {sk_filename}')
 
 
 #save ms_SK results
 ms_sk_all = np.transpose(ms_sk_all,(0,2,1))
-print('Final results shape: '+str(ms_sk_all.shape))
 
 np.save(ms_sk_filename, ms_sk_all)
-print('ms_SK spectra saved in {}'.format(ms_sk_filename))
+print(f'{ms_sk_all.shape} ms_SK spectra saved in {ms_sk_filename}')
 
 np.save(ms_spect_filename,ms_spect_all)
-print('ms_spect spectra saved in {}'.format(ms_spect_filename))
+print(f'{ms_spect_all.shape} ms_spect spectra saved in {ms_spect_filename}')
 
 
 
 #save spectrum results
 spect_all = np.transpose(spect_all,(0,2,1))
 np.save(spect_filename, spect_all)
-print('Unmitigated spectra saved in {}'.format(spect_filename))
+print(f'{spect_all.shape} Unmitigated spectra saved in {spect_filename}')
 
 
 #save mitigated results results
 regen_all = np.transpose(regen_all,(0,2,1))
 np.save(regen_filename, regen_all)
-print('Mitigated spectra saved in {}'.format(regen_filename))
+print(f'{regen_all.shape} Mitigated spectra saved in {regen_filename}')
 
 
 #save flags results
-flags_all = np.transpose(flags_all,(0,2,1))
+#flags_all = np.transpose(flags_all,(0,2,1))
 np.save(flags_filename,flags_all)
-print('Flags file saved to {}'.format(flags_filename))
+print(f'{flags_all.shape} Flags file saved to {flags_filename}')
 
 print(f"'{spect_filename}','{flags_filename}','{regen_filename}'")
 

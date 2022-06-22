@@ -366,9 +366,11 @@ def guppi_format(a):
 	#init output
 	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
 	#get real values, ravel, cast to int8
-	a_real = a.ravel().real.astype(np.int8)
+	#a_real = a.ravel().real.astype(np.int8)
+	a_real = np.clip(np.floor(a.real),-128,127).astype(np.int8)
 	#get imag values, ravel, cast to int8
-	a_imag = a.ravel().imag.astype(np.int8)
+	#a_imag = a.ravel().imag.astype(np.int8)
+	a_imag = np.clip(np.floor(a.imag),-128,127).astype(np.int8)
 	#interleave
 	out_arr[::2] = a_real
 	out_arr[1::2] = a_imag
