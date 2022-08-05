@@ -237,13 +237,13 @@ def statistical_noise(a,f):
 			#find clean data points from same channel and polarization
 			#good_data = a[i,:,pol][f[i,:,pol] == 0]
 			#how many data points do we need to replace
-			bad_data_size = a[i,:,pol][f[i,:,pol] == 1].size
+			bad_data_size = np.count_nonzero(f[i,:,pol])
  
 			#print(a[:,:,pol].shape,f[:,:,pol].shape)
 			ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
 			#print('generating representative awgn..')
-			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size).astype(np.int8)
-			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size).astype(np.int8)
+			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size)
+			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size)
 	return a
 
 
@@ -251,16 +251,12 @@ def statistical_noise(a,f):
 #for the length of the block
 #pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
 
-@jit
+
 def adj_chan_good_data(a,f,c):
 	#print('finding good data')
 	#replace a bad channel 'c' with stat. noise derived from adjacent channels
+	#print(type(a),a.shape,type(f),f.shape,type(c))
 
-	#for p in range(f.shape[2]):
-	#good_data = []
-	#good_data = a[c,:][f[c,:] == 0]
-
-	#print(c)
 
 	#define adjacent channels and clear ones that don't exist (neg chans, too high)
 	#adj_chans = [c-3,c-2,c-1,c,c+1,c+2,c+3]
@@ -270,58 +266,33 @@ def adj_chan_good_data(a,f,c):
 
 	adj_chans = np.array(adj_chans,dtype=np.uint32)
 	#keep looking for data in adjacent channels if good_data empty
-	
- 	#print('Pulling data from channels: {}'.format(adj_chans))
+
 	good_data=np.empty(0,dtype=np.complex64)
-	#for i in adj_chans:
-	#print(a[adj_chans,:].shape)
-	#print(f[adj_chans,:].shape)
-	#print(f[adj_chans,f_index].shape)
-	#for i in adj_chans:
-	#wt_inds=[0]
-	#good_data = np.append(good_data,a[c,:][f[c,:] == 0])
-	#wt_inds.append(good_data.size)
+
 	good_data = np.append(good_data,a[adj_chans,:][f[adj_chans,:] == 0])
-	#wt_inds.append(good_data.size)
+
 	adj=1
-	#keep looking for data in adjacent channels if good_data empty
+	#keep looking for data in adjacent channels if good_data empty\
+	#print(good_data.size)
 	while (good_data.size==0):
 		adj += 1
 		if (c-adj >= 0):
 			good_data = np.append(good_data,a[c-adj,:][f[c-adj,:] == 0])
 		if (c+adj < a.shape[0]):
 			good_data = np.append(good_data,a[c+adj,:][f[c+adj,:] == 0])
-		#wt_inds.append(good_data.size)
-		#if (good_data.size>0):
-		#	break
-		#good_data = np.array(good_data).flatten()
 		#we gotta quit at some point, just give it flagged data from same channel
-		if adj == 30:
+		#if we go 8% of the spectrum away
+		if adj == int(a.shape[0]*0.08):
 			good_data = a[c,:]
 			break
 	#print(adj)
-
-	#good_data = np.array(good_data).flatten()
-	#wt_lvls = np.hamming(1 + (2*adj))[adj:]
-	#wts = np.empty(good_data.size)
-	#for ii in range(len(wt_lvls)-1):
-	#	wts[wt_inds[ii]:wt_inds[ii+1]] = wt_lvls[ii]
-
-	#weighted average/vars based on channel distance from chan c
-	#gdr = DescrStatsW(good_data.real,weights=wts)
-	#gdi = DescrStatsW(good_data.imag,weights=wts)
-	#ave_real = gdr.mean
-	#ave_imag = gdi.mean
-	#std_real = gdr.std
-	#std_imag = gdi.std
 
 
 	ave_real = np.mean(good_data.real)
 	ave_imag = np.mean(good_data.imag)
 	std_real = np.std(good_data.real)
 	std_imag = np.std(good_data.imag)
-	#if (c==240):
-	#	print(ave_real,ave_imag,std_real,std_imag)
+
 
 
 	
@@ -359,7 +330,7 @@ def method_check(s):
 		return False
 
 #flatten data array 'a' into format writeable to guppi file
-@jit(nopython=True)
+#@jit(nopython=True)
 def guppi_format(a):
 	#takes array of np.complex64,ravels it and outputs as 1D array of signed
 	#8 bit integers ordered real,imag,real,imag,.....
@@ -367,10 +338,11 @@ def guppi_format(a):
 	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
 	#get real values, ravel, cast to int8
 	#a_real = a.ravel().real.astype(np.int8)
-	a_real = np.clip(np.floor(a.real),-128,127).astype(np.int8)
+	arav = a.ravel()
+	a_real = np.clip(np.floor(arav.real),-128,127).astype(np.int8)
 	#get imag values, ravel, cast to int8
 	#a_imag = a.ravel().imag.astype(np.int8)
-	a_imag = np.clip(np.floor(a.imag),-128,127).astype(np.int8)
+	a_imag = np.clip(np.floor(arav.imag),-128,127).astype(np.int8)
 	#interleave
 	out_arr[::2] = a_real
 	out_arr[1::2] = a_imag

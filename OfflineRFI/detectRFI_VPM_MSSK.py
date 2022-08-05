@@ -181,8 +181,8 @@ if infile[-4:] != '.raw':
 base = out_dir+infile[len(in_dir):-4]
 
 #filenames to save to
-ms_sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-ms_spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_sk_filename = f"{base}_MSSK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_spect_filename = f"{base}_MSspect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
 sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
 flags_filename = f"{base}_flags_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
 spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
@@ -216,6 +216,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
+	print(infile,outfile)
 	os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
@@ -239,6 +240,7 @@ if (mismatch != 0):
 for block in range(numblocks//mb):
 	print('------------------------------------------')
 	print(f'Block: {(block*mb)+1}/{numblocks}')
+	print(infile)
 	#print header for the first block
 	if block == 0:
 		header,headersize = rawFile.read_header()
@@ -248,11 +250,12 @@ for block in range(numblocks//mb):
 	for mb_i in range(mb):
 		if mb_i==0:
 			header,data = rawFile.read_next_data_block()
+			data = np.copy(data)
 			#length in spectra of one block, for use during rewriting mit. data
 			d1s = data.shape[1]
 		else:
 			h2,d2 = rawFile.read_next_data_block()
-			data = np.append(data,d2,axis=1)
+			data = np.append(data,np.copy(d2),axis=1)
 
 	#data is channelized voltages
 
@@ -395,6 +398,7 @@ for block in range(numblocks//mb):
 
 	#apply union of single scale and multiscale flag masks
 	#(each ms flag pixel covers several single scale pixels)
+	#print(flags_block.shape,ms_flags_block.shape)
 	for ichan in range(ms0):
 		for itime in range(ms1):
 			#print(flags_block.shape)
@@ -414,19 +418,22 @@ for block in range(numblocks//mb):
 		ms_spect_all = ms_s1
 		flags_all = flags_block
 	else:
-		sk_all = np.c_[sk_all,sk_block]
+		sk_all = np.concatenate((sk_all,sk_block),axis=1)
 		ms_sk_all = np.c_[ms_sk_all,ms_sk_block]
 		spect_all = np.c_[spect_all,spect_block]
 		ms_spect_all = np.concatenate((ms_spect_all,ms_s1),axis=1)
-		flags_all = np.c_[flags_all,flags_block]
+		flags_all = np.concatenate((flags_all,flags_block),axis=1)
 
+	#print('shapecheck')
+	#print(f'blocks: sk {sk_block.shape} spect {spect_block.shape} f {flags_block.shape}')
+	#print(f'all: sk {sk_all.shape} spect {spect_all.shape} f {flags_all.shape}')
 
 	#Replace data
 	print('Calculations complete...')
 	print('Replacing Data...')
 	
 	repl_chunk=np.copy(flags_block)
-	print(repl_chunk.shape)
+	#print(repl_chunk.shape)
 	print('transposed')
 	#now flag shape is (chan,spectra,pol)
 	#apply union of flags across pols
@@ -446,7 +453,7 @@ for block in range(numblocks//mb):
 	#	repl_chunk[:,:,0] = sir(repl_chunk[:,:,0],0.2,0.2,'union')
 	#	repl_chunk[:,:,1] = sir(repl_chunk[:,:,1],0.2,0.2,'union')
 
-
+	print(data.shape,repl_chunk.shape)
 	if method == 'zeros':
 		#replace data with zeros
 		data = repl_zeros(data,repl_chunk)
@@ -490,8 +497,6 @@ for block in range(numblocks//mb):
 		print('Re-formatting data and writing back to file...')
 		for mb_i in range(mb):
 			out_rawFile.seek(headersize,1)
-			print(d1s*mb_i,d1s*(mb_i+1))
-			print(data[:,d1s*mb_i:d1s*(mb_i+1),:].shape)
 			d1 = guppi_format(data[:,d1s*mb_i:d1s*(mb_i+1),:])
 			out_rawFile.write(d1.tostring())
 		#out_rawFile.seek(headersize,1)
@@ -534,7 +539,11 @@ print(f'{regen_all.shape} Mitigated spectra saved in {regen_filename}')
 np.save(flags_filename,flags_all)
 print(f'{flags_all.shape} Flags file saved to {flags_filename}')
 
-print(f"'{spect_filename}','{flags_filename}','{regen_filename}'")
+print(f"'{spect_filename}','{flags_filename}','{regen_filename}','{sk_filename}'")
+#put files in log file for easy inspection later
+logf = '/data/scratch/Summer2022/logf.txt'
+os.system(f"""echo "'{spect_filename}','{flags_filename}','{regen_filename}','{sk_filename}'" >> {logf}""")
+
 
 #thresholds again
 print('Upper Threshold: '+str(ut))
