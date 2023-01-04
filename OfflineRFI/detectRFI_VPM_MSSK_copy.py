@@ -80,8 +80,8 @@ import time
 
 from blimpy import GuppiRaw
 
-from RFI_detection import *
-from RFI_support import *
+#from RFI_detection import *
+#from RFI_support import *
 
 #--------------------------------------
 # Inputs
@@ -164,12 +164,11 @@ mb = args.mb
 
 
 #input file
-#pulls from the raw data directory if full path not given
+#pulls from my scratch directory if full path not given
 if infile[0] != '/':
 	infile = in_dir + infile
 else:
-	in_dir = infile[:infile.rfind('/')+1]
-	#infile = infile[infile.rfind('/')+1:]
+	in_dir = infile[:infile.index('/')+1]
 
 if infile[-4:] != '.raw':
 	print("WARNING input filename doesn't end in '.raw'. Are you sure you want to use this file?")
@@ -182,8 +181,8 @@ if infile[-4:] != '.raw':
 base = out_dir+infile[len(in_dir):-4]
 
 #filenames to save to
-ms_sk_filename = f"{base}_MSSK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-ms_spect_filename = f"{base}_MSspect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
 sk_filename = f"{base}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
 flags_filename = f"{base}_flags_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
 spect_filename = f"{base}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
@@ -191,19 +190,32 @@ regen_filename = f"{base}_regen_m{SK_M}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.np
 outfile = f"{out_dir}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
 
 
-#threshold calc from sigma
-SK_p = (1-scipy.special.erf(sigma/math.sqrt(2))) / 2
-print('Probability of false alarm: {}'.format(SK_p))
-
-#calculate thresholds
-print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_M-(ms1-1), N = n, d = d, p = SK_p)
-print('Upper Threshold: '+str(ut))
-print('Lower Threshold: '+str(lt))
 
 
 if rawdata:
 	print('Saving raw data to npy block style files')
+
+
+#flatten data array 'a' into format writeable to guppi file
+#@jit(nopython=True)
+def guppi_format(a):
+	#takes array of np.complex64,ravels it and outputs as 1D array of signed
+	#8 bit integers ordered real,imag,real,imag,.....
+	#init output
+	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
+	#get real values, ravel, cast to int8
+	#a_real = a.ravel().real.astype(np.int8)
+	arav = a.ravel()
+	a_real = np.clip(np.floor(arav.real),-128,127).astype(np.int8)
+	#get imag values, ravel, cast to int8
+	#a_imag = a.ravel().imag.astype(np.int8)
+	a_imag = np.clip(np.floor(arav.imag),-128,127).astype(np.int8)
+	#interleave
+	out_arr[::2] = a_real
+	out_arr[1::2] = a_imag
+	return out_arr
+
+
 
 
 #--------------------------------------
@@ -217,8 +229,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	print(infile,outfile)
-	#os.system('cp '+infile+' '+outfile)
+	os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
 #load file and copy
@@ -241,30 +252,41 @@ if (mismatch != 0):
 for block in range(numblocks//mb):
 	print('------------------------------------------')
 	print(f'Block: {(block*mb)+1}/{numblocks}')
-	print(infile)
 	#print header for the first block
 	if block == 0:
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
+		#print('Datatype: '+str(type(data[0,0,0])))
+		for line in header:
+			print(line+':  '+str(header[line]))
 
-	#loading multiple blocks at once?	
+	#loading multiple blocks at once?
+	#have to add them to a list of blocks because blimpy returns only a view of the block
+	#so, when loading multiple blocks at the same time,
+	#every block except the first is a copy of the last block
+	#e.g. for mb=4, data ends up as block1,block4,block4,block4
+	#creating the fake pulse!
 	for mb_i in range(mb):
 		if mb_i==0:
 			header,data = rawFile.read_next_data_block()
-			data = np.copy(data)
 			#length in spectra of one block, for use during rewriting mit. data
 			d1s = data.shape[1]
+			data = np.copy(data)
 		else:
 			h2,d2 = rawFile.read_next_data_block()
 			data = np.append(data,np.copy(d2),axis=1)
 
+	#data = np.append(data,d2,axis=1)
+
+
+
+	data = np.ascontiguousarray(data)
+	if block ==0:
+		np.save('/home/scratch/esmith/testblock.npy',data)
+
+
 	#data is channelized voltages
 
-	#print header for the first block
-	if block == 0:
-		print('Datatype: '+str(type(data[0,0,0])))
-		for line in header:
-			print(line+':  '+str(header[line]))
 
 
 	#find data shape
@@ -273,301 +295,22 @@ for block in range(numblocks//mb):
 	num_pol = data.shape[2]
 	print('Data shape: {} || block size: {}'.format(data.shape,data.nbytes))
 
-	#save raw data?
-	if rawdata:
-		#pad number to three digits
-		block_fname = str(block).zfill(3)
-		save_fname = base+'_block'+block_fname+'.npy'
-		np.save(save_fname,data)
-		#print('Saved under '+out_dir+save_fname)
-
-
-
-	#Check to see if SK_M divides the total amount of data points
-	mismatch = num_timesamples % SK_M
-	if (mismatch != 0):
-		print('Warning: SK_M does not divide the amount of time samples')
-		#exit()
-
 	
-	print('There are {} time samples and you input {} as m'.format(num_timesamples,SK_M))
-	num_SKbins = int(num_timesamples/SK_M)
-	print('Leading to '+str(num_SKbins)+' SK time bins')
-
-
-	#Calculations
-
-	#ASSUMING NPOL = 2:
-	s1 = np.zeros((num_coarsechan,num_SKbins,2))
-	s2 = np.zeros((num_coarsechan,num_SKbins,2))
-
-
-	#make s1 and s2 arrays, as well as avg spects
-	for k in range(num_SKbins):
-	
-		#take the stream of correct data
-		start = k*SK_M
-		end = (k+1)*SK_M
-		data_chunk = data[:,start:end,:]
-
-		data_chunk = np.abs(data_chunk)**2
-
-		s1[:,k,:] = np.sum(data_chunk,axis=1)
-		s2[:,k,:] = np.sum(data_chunk**2,axis=1)
-
-
-		#square it
-		spectrum = np.average(data_chunk,axis=1)
-
-
-		if (k==0):
-			spect_block=np.expand_dims(spectrum,axis=2)
-		else:
-			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
-
-	#do singlescale SK flagging
-	sk_block = SK_EST_alt(s1,s2,SK_M,n=1,d=1)
-	flags_block = np.zeros(sk_block.shape,dtype=np.int8)
-	flags_block[sk_block>ut] = 1
-	flags_block[sk_block<lt] = 1
-
-	#make ms_s1 and ms_s2 arrays out of those by binning
-	ms_binsize = ms0*ms1
-	ms_s1 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	ms_s2 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	
-
-	#make multiscale S1, S2
-	for ichan in range(ms0):
-		for itime in range(ms1):
-			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-
-
-	#perform multiscale SK
-	for k in range(num_SKbins-(ms1-1)):
-	
-
-		sk_spect = np.zeros((num_coarsechan-(ms0-1),2))
-
-		#perform RFI detection
-		if (rfi == 'SKurtosis'):
-			#print(ms_s1.shape)
-			#print(ms_s2.shape)
-			sk_spect[:,0] = ms_SK_EST(ms_s1[:,k,0],ms_s2[:,k,0],SK_M-(ms1-1),n,d)
-			sk_spect[:,1] = ms_SK_EST(ms_s1[:,k,1],ms_s2[:,k,1],SK_M-(ms1-1),n,d)
-			#init flag chunk
-			ms_flag_spect = np.zeros((num_coarsechan-(ms0-1),2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			ms_flag_spect[sk_spect>ut] = 1
-			ms_flag_spect[sk_spect<lt] = 1
-
-
-		elif (rfi == 'SEntropy'):
-			#not done?
-			sk_spect[:,0] = entropy(data_chunk[:,:,0])
-			sk_spect[:,1] = entropy(data_chunk[:,:,1])
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			#flag_spect[sk_spect>ut] = 1
-			#flag_spect[sk_spect<lt] = 1
-
-
-		
-		#append to results
-		if (k==0):
-			ms_sk_block=np.expand_dims(sk_spect,axis=2)
-			ms_flags_block = np.expand_dims(ms_flag_spect,axis=2)
-
-		else:
-			ms_sk_block=np.c_[ms_sk_block,np.expand_dims(sk_spect,axis=2)]
-			ms_flags_block = np.c_[ms_flags_block,np.expand_dims(ms_flag_spect,axis=2)]
-
-
-	#adj_chan flagging here
-	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
-	
-	ms_flags_block = np.transpose(ms_flags_block,(0,2,1))
-
-	#print flagged percentage for both pols from single scale SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
-
-	#print flagged percentage for both pols from multi scale SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,:,0])/ms_flags_block[:,:,1].size),(100.*np.count_nonzero(ms_flags_block[:,:,1])/ms_flags_block[:,:,1].size)))
-
-
-	#apply union of single scale and multiscale flag masks
-	#(each ms flag pixel covers several single scale pixels)
-	#print(flags_block.shape,ms_flags_block.shape)
-	for ichan in range(ms0):
-		for itime in range(ms1):
-			#print(flags_block.shape)
-			#print(ms_flags_block.shape)
-			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:][ms_flags_block==1] = 1
-
-
-	#print flagged percentage for both pols from union of ss and ms SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
-
-
-
-	if (block==0):
-		sk_all = sk_block
-		ms_sk_all = ms_sk_block
-		spect_all = spect_block
-		ms_spect_all = ms_s1
-		flags_all = flags_block
-	else:
-		sk_all = np.concatenate((sk_all,sk_block),axis=1)
-		ms_sk_all = np.c_[ms_sk_all,ms_sk_block]
-		spect_all = np.c_[spect_all,spect_block]
-		ms_spect_all = np.concatenate((ms_spect_all,ms_s1),axis=1)
-		flags_all = np.concatenate((flags_all,flags_block),axis=1)
-
-	#print('shapecheck')
-	#print(f'blocks: sk {sk_block.shape} spect {spect_block.shape} f {flags_block.shape}')
-	#print(f'all: sk {sk_all.shape} spect {spect_all.shape} f {flags_all.shape}')
-
-	#Replace data
-	print('Calculations complete...')
-	print('Replacing Data...')
-	
-	repl_chunk=np.copy(flags_block)
-	#print(repl_chunk.shape)
-	print('transposed')
-	#now flag shape is (chan,spectra,pol)
-	#apply union of flags across pols
-	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
-	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
-	print('union')
-
-	
-	#extend flagging array to be same size as raw data
-	extend = np.ones((1,SK_M,1),dtype=np.int8)
-	print('extend')
-	repl_chunk = np.kron(repl_chunk,extend).astype(np.int8)
-	print('repl_chunk set...')
-	#sir flagging?
-	#for i in range(2):
-	#	repl_chunk[:,:,0] = sir(repl_chunk[:,:,0],0.2,0.2,'union')
-	#	repl_chunk[:,:,1] = sir(repl_chunk[:,:,1],0.2,0.2,'union')
-
-	if method == 'zeros':
-		#replace data with zeros
-		data = repl_zeros(data,repl_chunk)
-
-	if method == 'previousgood':
-		#replace data with previous (or next) good
-		data = prevgood_init(data,repl_chunk,SK_M)
-		#data = previous_good(data,repl_chunk,SK_M)
-
-	if method == 'stats':
-		#replace data with statistical noise derived from good datapoints
-		data = statistical_noise_fir(data,repl_chunk)
-
-
-	#generate averaged datafile from replaced data
-	for k in range(num_SKbins):
-	
-		#take the stream of correct data
-		start = k*SK_M
-		end = (k+1)*SK_M
-		data_chunk = data[:,start:end,:]
-
-
-		data_chunk = np.abs(data_chunk)**2#abs value and square
-
-		regen = np.average(data_chunk,axis=1)
-
-		if (k==0):
-			regen_block=np.expand_dims(regen,axis=2)
-		else:
-			regen_block=np.c_[regen_block,np.expand_dims(regen,axis=2)]
-
-	if (block==0):
-		regen_all = regen_block
-	else:
-		regen_all = np.c_[regen_all,regen_block]
-
-
-
-	#Write back to copied raw file
+	#out_test = np.arange(num_coarsechan*num_timesamples*num_pol,dtype=np.complex64) + 1.j*np.arange(num_coarsechan*num_timesamples*num_pol,dtype=np.complex64)
+	#out_test = np.reshape(out_test,(num_coarsechan,num_timesamples,num_pol))
 	if output_bool:
 		print('Re-formatting data and writing back to file...')
 		for mb_i in range(mb):
 			out_rawFile.seek(headersize,1)
+			#print(d1s*mb_i,d1s*(mb_i+1))
+			#print(data[:,d1s*mb_i:d1s*(mb_i+1),:].shape)
 			d1 = guppi_format(data[:,d1s*mb_i:d1s*(mb_i+1),:])
+			#d1 = guppi_format(out_test[:,d1s*mb_i:d1s*(mb_i+1),:])
+			#out_rawfile.write(headers[i])
 			out_rawFile.write(d1.tostring())
 		#out_rawFile.seek(headersize,1)
 		#d2 = guppi_format(data[:,d1s:,:])
 		#out_rawFile.write(d1.tostring())
-
-
-#save SK results
-
-
-np.save(sk_filename, sk_all)
-print(f'{sk_all.shape} SK spectra saved in {sk_filename}')
-
-
-#save ms_SK results
-ms_sk_all = np.transpose(ms_sk_all,(0,2,1))
-
-np.save(ms_sk_filename, ms_sk_all)
-print(f'{ms_sk_all.shape} ms_SK spectra saved in {ms_sk_filename}')
-
-np.save(ms_spect_filename,ms_spect_all)
-print(f'{ms_spect_all.shape} ms_spect spectra saved in {ms_spect_filename}')
-
-
-
-#save spectrum results
-spect_all = np.transpose(spect_all,(0,2,1))
-np.save(spect_filename, spect_all)
-print(f'{spect_all.shape} Unmitigated spectra saved in {spect_filename}')
-
-
-#save mitigated results results
-regen_all = np.transpose(regen_all,(0,2,1))
-np.save(regen_filename, regen_all)
-print(f'{regen_all.shape} Mitigated spectra saved in {regen_filename}')
-
-
-#save flags results
-#flags_all = np.transpose(flags_all,(0,2,1))
-np.save(flags_filename,flags_all)
-print(f'{flags_all.shape} Flags file saved to {flags_filename}')
-
-print(f"'{spect_filename}','{flags_filename}','{regen_filename}','{sk_filename}'")
-#put files in log file for easy inspection later
-logf = '/data/scratch/Summer2022/logf.txt'
-os.system(f"""echo "'{spect_filename}','{flags_filename}','{regen_filename}','{sk_filename}'" >> {logf}""")
-
-
-#thresholds again
-print('Upper Threshold: '+str(ut))
-print('Lower Threshold: '+str(lt))
-
-tot_points = flags_all[:,:,1].size
-flagged_pts_p1 = np.count_nonzero(flags_all[:,:,0])
-flagged_pts_p2 = np.count_nonzero(flags_all[:,:,1])
-
-print('Pol0: '+str(flagged_pts_p1)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(flagged_pts_p1)/tot_points)*100
-print('Pol0: '+str(flagged_percent)+'% of data outside acceptable ranges')
-
-print('Pol1: '+str(flagged_pts_p2)+' datapoints were flagged out of '+str(tot_points))
-flagged_percent = (float(flagged_pts_p2)/tot_points)*100
-print('Pol1: '+str(flagged_percent)+'% of data outside acceptable ranges')
-
-tot_points = flags_all.size
-f_union = np.copy(flags_all)
-f_union[:,:,0][f_union[:,:,1]==1]=1
-f_union[:,:,1][f_union[:,:,0]==1]=1
-flagged_union_pts = (100.*np.count_nonzero(f_union))/f_union.size
-
-print('Union of flags: {}% of data flagged'.format(flagged_union_pts))
 
 
 

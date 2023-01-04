@@ -135,6 +135,12 @@ def repl_zeros(a,f):
 
 #replace with previous good data (or future good)
 
+def prevgood_init(a,f,x):
+	#fix for missing polarization forloop
+	out_arr = np.array(a)
+	for pol in range(a.shape[2]):
+		out_arr[:,:,pol] = previous_good(a[:,:,pol],f[:,:,pol],x)
+
 def previous_good(a,f,x):
 	"""
 	Replace flagged data with copies of clean data
@@ -210,7 +216,7 @@ def gen_good_data(a,f,x,i):
 	return good_data
 
 
-#replace with statistical noise
+#replace with tstatistical noise
 @jit(parallel=True)
 def statistical_noise(a,f):
 	"""
@@ -228,7 +234,7 @@ def statistical_noise(a,f):
 	
 	Returns
 	-----------
-	out : ndarray
+	out : np.random.normal(0,1,size=2048)ndarray
 		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
 	"""
 	print('stats....')
@@ -247,16 +253,217 @@ def statistical_noise(a,f):
 	return a
 
 
+#replace with statistical noise
+@jit(parallel=True)
+def statistical_noise_alt(a,f,SK_M):
+	"""
+	Replace flagged data with statistical noise.
+	Alt version that only takes the same time bin at adjacent-ish freq channels
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+
+	Returns
+	-----------
+	out : ndarray
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
+	"""
+	print('stats....')
+	print('fshape',f.shape)
+	for pol in prange(f.shape[2]):
+		for i in prange(f.shape[0]):
+			for tb in prange(f.shape[1]//SK_M):
+				if f[i,SK_M*tb,pol] == 1:
+			#find clean data points from same channel and polarization
+			#good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#how many data points do we need to replace
+					bad_data_size = SK_M
+ 
+			#print(a[:,:,pol].shape,f[:,:,pol].shape)
+					ave_real,ave_imag,std_real,std_imag = adj_chan_good_data_alt(a[:,tb*SK_M:(tb+1)*SK_M,pol],f[:,tb*SK_M:(tb+1)*SK_M,pol],i,SK_M,tb)
+					#print('generating representative awgn..')
+					(a[i,tb*SK_M:(tb+1)*SK_M,pol].real)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = np.random.normal(ave_real,std_real,SK_M)
+					(a[i,tb*SK_M:(tb+1)*SK_M,pol].imag)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = np.random.normal(ave_imag,std_imag,SK_M)
+	#print('returning a')
+	return a
+
+
+
+@jit(parallel=True)
+def statistical_noise_alt_filter(a,f,SK_M):
+	"""
+	Replace flagged data with statistical noise.
+	Alt version that only takes the same time bin at adjacent-ish freq channels
+	Parameters
+	filter version that filters noise by pfb coefficients to get desired spectral response
+	-----------
+	a : ndarray
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+
+	Returns
+	-----------
+	out : ndarray
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
+	"""
+	print('stats....')
+	print('fshape',f.shape)
+	#find correct PFB coefficents
+	nchan = str(f.shape[0]).zfill(4)
+	#print(nchan,type(nchan))	
+	hfile = '/users/esmith/RFI_MIT/PFBcoeffs/c0800x'+nchan+'_x14_7_24t_095binw_get_pfb_coeffs_h.npy'
+	h = np.load(hfile)
+	dec = h[::2*f.shape[0]]
+
+	for pol in prange(f.shape[2]):
+		for i in prange(f.shape[0]):
+			for tb in prange(f.shape[1]//SK_M):
+				if f[i,SK_M*tb,pol] == 1:
+			#find clean data points from same channel and polarization
+			#good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#how many data points do we need to replace
+					bad_data_size = SK_M
+ 
+			#print(a[:,:,pol].shape,f[:,:,pol].shape)
+					ave_real,ave_imag,std_real,std_imag = adj_chan_good_data_alt(a[:,tb*SK_M:(tb+1)*SK_M,pol],f[:,tb*SK_M:(tb+1)*SK_M,pol],i,SK_M,tb)
+					#print('generating representative awgn..')
+					(a[i,tb*SK_M:(tb+1)*SK_M,pol].real)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = noise_filter(ave_real,std_real,SK_M,dec)
+					
+					(a[i,tb*SK_M:(tb+1)*SK_M,pol].imag)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = noise_filter(ave_imag,std_imag,SK_M,dec)
+	#print('returning a')
+	return a
+
+
+#replace with statistical noise
+@jit(parallel=True)
+def statistical_noise_fir(a,f):
+	"""
+	Replace flagged data with statistical noise.
+	fir version that adds a fir in the noise
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+
+	
+	Returns
+	-----------
+	out : np.random.normal(0,1,size=2048)ndarray
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
+	"""
+	print('stats....')
+	#find correct PFB coefficents
+	nchan = str(f.shape[0]).zfill(4)
+	#print(nchan,type(nchan))	
+	hfile = '/users/esmith/RFI_MIT/PFBcoeffs/c0800x'+nchan+'_x14_7_24t_095binw_get_pfb_coeffs_h.npy'
+	h = np.load(hfile)
+	dec = h[::2*f.shape[0]]
+
+
+	for pol in prange(f.shape[2]):	
+		for i in prange(f.shape[0]):
+			#find clean data points from same channel and polarization
+			#good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#how many data points do we need to replace
+			bad_data_size = np.count_nonzero(f[i,:,pol])
+ 			#print(bad_data_size)
+			#print(a[:,:,pol].shape,f[:,:,pol].shape)
+			if bad_data_size > 0:
+				ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
+			#print('generating representative awgn..')
+				a[i,:,pol].real[f[i,:,pol] == 1] = noise_filter(ave_real,std_real,bad_data_size,dec)  
+				a[i,:,pol].imag[f[i,:,pol] == 1] = noise_filter(ave_imag,std_imag,bad_data_size,dec)
+	return a
+
+
+
+#replace with statistical noise
+@jit(parallel=True)
+def statistical_noise_fir_abs(a,f,rms_txt):
+	"""
+	Replace flagged data with statistical noise.
+	fir version that adds a fir in the noise
+	abs version that uses the absorber data to determine correct rms
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+	rms_txt : string
+		string filename that has the correct rms values from absorber tests.
+	
+	
+	Returns
+	-----------
+	out : np.random.normal(0,1,size=2048)ndarray
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
+	"""
+	print('stats....')
+	#find correct PFB coefficents
+	nchan = str(f.shape[0]).zfill(4)
+	#print(nchan,type(nchan))	
+	hfile = '/users/esmith/RFI_MIT/PFBcoeffs/c0800x'+nchan+'_x14_7_24t_095binw_get_pfb_coeffs_h.npy'
+	h = np.load(hfile)
+	dec = h[::2*f.shape[0]]
+
+	#load absorber scan data results
+	model_chan,model_rms_x,model_rms_y = np.loadtxt(rms_txt,usecols=(0,2,3),unpack=True)
+
+	#find rms and scale to match the unflagged data
+	data_ma = np.copy(np.ma.masked_array(a,f))
+	data_rms_x,data_rms_y = np.std(data_ma,axis=1).T
+
+	scale_x = least_squares(func,1,args=(model_rms_x,data_rms_x))["x"][0]
+	scale_y = least_squares(func,1,args=(model_rms_y,data_rms_y))["x"][0]
+	std_noise = (scale_x * model_rms_x , scale_y * model_rms_y)
+
+	for pol in prange(f.shape[2]):	
+		for i in prange(f.shape[0]):
+			#find clean data points from same channel and polarization
+			#good_data = a[i,:,pol][f[i,:,pol] == 0]
+			#how many data points do we need to replace
+			bad_data_size = np.count_nonzero(f[i,:,pol])
+ 			#print(bad_data_size)
+			#print(a[:,:,pol].shape,f[:,:,pol].shape)
+			if bad_data_size > 0:
+				ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
+			#print('generating representative awgn..')
+				a[i,:,pol].real[f[i,:,pol] == 1] = noise_filter(ave_real,std_noise[pol],bad_data_size,dec)  
+				a[i,:,pol].imag[f[i,:,pol] == 1] = noise_filter(ave_imag,std_noise[pol],bad_data_size,dec)
+	return a
+
+def scalfunc(a,model,data):
+    return data - a*model
+
+
+
+def noise_filter(ave,std,msk,dec):
+	#filter noise correctly to have desired spectral response
+	#make correctly scaled noise
+	out = np.random.normal(ave,std,msk)
+	#do FIR
+	out_filtered = np.convolve(dec,out,mode='same')
+	#rescale from losing power to FIR
+	#out_filtered *= np.std(out)/np.std(out_filtered)
+	return out_filtered
+
+
 #alternate statistical noise generator if entire channel is flagged
 #for the length of the block
 #pulls unflagged data points from at most two channels on either side (less if chan c = 0,1 or ex. 254,255)
 
 
 def adj_chan_good_data(a,f,c):
-	#print('finding good data')
-	#replace a bad channel 'c' with stat. noise derived from adjacent channels
-	#print(type(a),a.shape,type(f),f.shape,type(c))
-
+	#replace a bad channel 'c' with statistical noise derived from adjacent channels
+	#return mean/std derived from adjacent channels, 
+	#actual noise generation done by noise_filter()
 
 	#define adjacent channels and clear ones that don't exist (neg chans, too high)
 	#adj_chans = [c-3,c-2,c-1,c,c+1,c+2,c+3]
@@ -285,7 +492,6 @@ def adj_chan_good_data(a,f,c):
 		if adj == int(a.shape[0]*0.08):
 			good_data = a[c,:]
 			break
-	#print(adj)
 
 
 	ave_real = np.mean(good_data.real)
@@ -293,9 +499,52 @@ def adj_chan_good_data(a,f,c):
 	std_real = np.std(good_data.real)
 	std_imag = np.std(good_data.imag)
 
+	return ave_real,ave_imag,std_real,std_imag
 
+
+
+
+def adj_chan_good_data_alt(a,f,c,SK_M,tb):
+	#replace a bad channel 'c' with statistical noise derived from adjacent channels
+	#return mean/std derived from adjacent channels, 
+	#actual noise generation done by noise_filter()
+	#alt version that only takes from adjacent channel at the SAME TIME BIN
+
+	#define adjacent channels and clear ones that don't exist (neg chans, too high)
+	#adj_chans = [c-3,c-2,c-1,c,c+1,c+2,c+3]
+	adj_chans = [c-1,c,c+1]
+	adj_chans = [i for i in adj_chans if i>=0]
+	adj_chans = [i for i in adj_chans if i<a.shape[0]]
+
+	adj_chans = np.array(adj_chans,dtype=np.uint32)
+	#keep looking for data in adjacent channels if good_data empty
+
+	good_data=np.empty(0,dtype=np.complex64)
 
 	
+	good_data = np.append(good_data,a[adj_chans,:][f[adj_chans,:] == 0])
+	adj=1
+	#keep looking for data in adjacent channels if good_data empty\
+	#print(good_data.size)
+	while (good_data.size==0):
+		adj += 1
+		#print('dude')
+		if (c-adj >= 0):
+			good_data = np.append(good_data,a[c-adj,:][f[c-adj,:] == 0])
+		#print('can i get uhh')
+		if (c+adj < a.shape[0]):
+			good_data = np.append(good_data,a[c+adj,:][f[c+adj,:] == 0])
+		#we gotta quit at some point, just give it flagged data from same channel
+		#if we go 8% of the spectrum away
+		if adj == int(a.shape[0]*0.08):
+			good_data = a[c,:]
+			break
+
+	ave_real = np.mean(good_data.real)
+	ave_imag = np.mean(good_data.imag)
+	std_real = np.std(good_data.real)
+	std_imag = np.std(good_data.imag)
+
 	return ave_real,ave_imag,std_real,std_imag
 
 
