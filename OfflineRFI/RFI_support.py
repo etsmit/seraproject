@@ -199,106 +199,14 @@ def previous_good(a,f,x):
 
 
 
-#supports statistical_noise function
-#i = coarse channel of interest
-@jit(nopython=True)
-def gen_good_data(a,f,x,i):
-	
-	good_data
-	good_data = []
-	#print('Coarse Chan '+str(i))
-	for j in range(f.shape[1]):
-		#create good data to pull noise stats from
-		if f[i,j] == 0:
-			good_data.append(a[i,j*x:(j+1)*x])
-
-	good_data = np.array(good_data).flatten()
-	return good_data
-
-
-#replace with tstatistical noise
-@jit(parallel=True)
-def statistical_noise(a,f):
-	"""
-	Replace flagged data with statistical noise.
-
-	Parameters
-	-----------
-	a : ndarray
-		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
-	f : ndarray
-		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
-	f_index : 1d int8 array
-		index array for talking between f, a
-	
-	
-	Returns
-	-----------
-	out : np.random.normal(0,1,size=2048)ndarray
-		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
-	"""
-	print('stats....')
-	for pol in prange(f.shape[2]):	
-		for i in prange(f.shape[0]):
-			#find clean data points from same channel and polarization
-			#good_data = a[i,:,pol][f[i,:,pol] == 0]
-			#how many data points do we need to replace
-			bad_data_size = np.count_nonzero(f[i,:,pol])
- 
-			#print(a[:,:,pol].shape,f[:,:,pol].shape)
-			ave_real,ave_imag,std_real,std_imag = adj_chan_good_data(a[:,:,pol],f[:,:,pol],i)
-			#print('generating representative awgn..')
-			a[i,:,pol].real[f[i,:,pol] == 1] = np.random.normal(ave_real,std_real,bad_data_size)
-			a[i,:,pol].imag[f[i,:,pol] == 1] = np.random.normal(ave_imag,std_imag,bad_data_size)
-	return a
-
-
-#replace with statistical noise
-@jit(parallel=True)
-def statistical_noise_alt(a,f,SK_M):
-	"""
-	Replace flagged data with statistical noise.
-	Alt version that only takes the same time bin at adjacent-ish freq channels
-	Parameters
-	-----------
-	a : ndarray
-		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
-	f : ndarray
-		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
-
-	Returns
-	-----------
-	out : ndarray
-		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
-	"""
-	print('stats....')
-	print('fshape',f.shape)
-	for pol in prange(f.shape[2]):
-		for i in prange(f.shape[0]):
-			for tb in prange(f.shape[1]//SK_M):
-				if f[i,SK_M*tb,pol] == 1:
-			#find clean data points from same channel and polarization
-			#good_data = a[i,:,pol][f[i,:,pol] == 0]
-			#how many data points do we need to replace
-					bad_data_size = SK_M
- 
-			#print(a[:,:,pol].shape,f[:,:,pol].shape)
-					ave_real,ave_imag,std_real,std_imag = adj_chan_good_data_alt(a[:,tb*SK_M:(tb+1)*SK_M,pol],f[:,tb*SK_M:(tb+1)*SK_M,pol],i,SK_M,tb)
-					#print('generating representative awgn..')
-					(a[i,tb*SK_M:(tb+1)*SK_M,pol].real)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = np.random.normal(ave_real,std_real,SK_M)
-					(a[i,tb*SK_M:(tb+1)*SK_M,pol].imag)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = np.random.normal(ave_imag,std_imag,SK_M)
-	#print('returning a')
-	return a
-
-
 
 @jit(parallel=True)
-def statistical_noise_alt_filter(a,f,SK_M):
+def statistical_noise_alt_fir(a,f,SK_M):
 	"""
 	Replace flagged data with statistical noise.
-	Alt version that only takes the same time bin at adjacent-ish freq channels
+	- alt version that only takes the same time bin at adjacent-ish freq channels
+	- fir version that filters noise by pfb coefficients to get desired spectral response
 	Parameters
-	filter version that filters noise by pfb coefficients to get desired spectral response
 	-----------
 	a : ndarray
 		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
@@ -343,7 +251,7 @@ def statistical_noise_alt_filter(a,f,SK_M):
 def statistical_noise_fir(a,f):
 	"""
 	Replace flagged data with statistical noise.
-	fir version that adds a fir in the noise
+	- fir version that adds a fir in the noise
 	Parameters
 	-----------
 	a : ndarray
@@ -388,8 +296,8 @@ def statistical_noise_fir(a,f):
 def statistical_noise_fir_abs(a,f,rms_txt):
 	"""
 	Replace flagged data with statistical noise.
-	fir version that adds a fir in the noise
-	abs version that uses the absorber data to determine correct rms
+	- fir version that adds a fir in the noise
+	- abs version that uses the absorber data to determine correct rms
 	Parameters
 	-----------
 	a : ndarray
@@ -439,20 +347,6 @@ def statistical_noise_fir_abs(a,f,rms_txt):
 				a[i,:,pol].imag[f[i,:,pol] == 1] = noise_filter(ave_imag,std_noise[pol],bad_data_size,dec)
 	return a
 
-def scalfunc(a,model,data):
-    return data - a*model
-
-
-
-def noise_filter(ave,std,msk,dec):
-	#filter noise correctly to have desired spectral response
-	#make correctly scaled noise
-	out = np.random.normal(ave,std,msk)
-	#do FIR
-	out_filtered = np.convolve(dec,out,mode='same')
-	#rescale from losing power to FIR
-	#out_filtered *= np.std(out)/np.std(out_filtered)
-	return out_filtered
 
 
 #alternate statistical noise generator if entire channel is flagged
@@ -461,9 +355,28 @@ def noise_filter(ave,std,msk,dec):
 
 
 def adj_chan_good_data(a,f,c):
-	#replace a bad channel 'c' with statistical noise derived from adjacent channels
-	#return mean/std derived from adjacent channels, 
-	#actual noise generation done by noise_filter()
+	"""
+	Return mean/std derived from unflagged data in adjacent channels 
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of original power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+	c : int
+		Channel of interest
+	
+	Returns
+	-----------
+	ave_real : float
+		average value of unflagged real data
+	ave_imag : float
+		average value of unflagged imaginary data
+	std_real : float		
+		standard deviation of unflagged real data
+	std_imag : float
+		standard deviation of unflagged imaginary data
+	"""
 
 	#define adjacent channels and clear ones that don't exist (neg chans, too high)
 	#adj_chans = [c-3,c-2,c-1,c,c+1,c+2,c+3]
@@ -472,24 +385,22 @@ def adj_chan_good_data(a,f,c):
 	adj_chans = [i for i in adj_chans if i<a.shape[0]]
 
 	adj_chans = np.array(adj_chans,dtype=np.uint32)
-	#keep looking for data in adjacent channels if good_data empty
 
+	#set up array of unflagged data and populate it with any unflagged data from adj_chans channels
 	good_data=np.empty(0,dtype=np.complex64)
-
 	good_data = np.append(good_data,a[adj_chans,:][f[adj_chans,:] == 0])
 
 	adj=1
-	#keep looking for data in adjacent channels if good_data empty\
-	#print(good_data.size)
+	#keep looking for data in adjacent channels if good_data empty
 	while (good_data.size==0):
 		adj += 1
 		if (c-adj >= 0):
 			good_data = np.append(good_data,a[c-adj,:][f[c-adj,:] == 0])
 		if (c+adj < a.shape[0]):
 			good_data = np.append(good_data,a[c+adj,:][f[c+adj,:] == 0])
-		#we gotta quit at some point, just give it flagged data from same channel
-		#if we go 8% of the spectrum away
-		if adj == int(a.shape[0]*0.08):
+		#if we go 8% of the spectrum away, give up and give flagged data from same channel
+		failed += 1
+		if adj >= int(a.shape[0]*0.08):
 			good_data = a[c,:]
 			break
 
@@ -498,6 +409,7 @@ def adj_chan_good_data(a,f,c):
 	ave_imag = np.mean(good_data.imag)
 	std_real = np.std(good_data.real)
 	std_imag = np.std(good_data.imag)
+	num_iter += 1
 
 	return ave_real,ave_imag,std_real,std_imag
 
@@ -505,11 +417,33 @@ def adj_chan_good_data(a,f,c):
 
 
 def adj_chan_good_data_alt(a,f,c,SK_M,tb):
-	#replace a bad channel 'c' with statistical noise derived from adjacent channels
-	#return mean/std derived from adjacent channels, 
-	#actual noise generation done by noise_filter()
-	#alt version that only takes from adjacent channel at the SAME TIME BIN
-
+	"""
+	Return mean/std derived from unflagged data in adjacent channels
+	- alt version that only takes from adjacent channel at the SAME TIME BIN
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of original power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+	c : int
+		Channel of interest
+	SK_M : int
+		M parameter from SK equation
+	tb : int
+		time bin of interest
+	
+	Returns
+	-----------
+	ave_real : float
+		average value of unflagged real data
+	ave_imag : float
+		average value of unflagged imaginary data
+	std_real : float		
+		standard deviation of unflagged real data
+	std_imag : float
+		standard deviation of unflagged imaginary data
+	"""
 	#define adjacent channels and clear ones that don't exist (neg chans, too high)
 	#adj_chans = [c-3,c-2,c-1,c,c+1,c+2,c+3]
 	adj_chans = [c-1,c,c+1]
@@ -517,21 +451,17 @@ def adj_chan_good_data_alt(a,f,c,SK_M,tb):
 	adj_chans = [i for i in adj_chans if i<a.shape[0]]
 
 	adj_chans = np.array(adj_chans,dtype=np.uint32)
-	#keep looking for data in adjacent channels if good_data empty
 
+	#set up array of unflagged data and populate it with any unflagged data from adj_chans channels
 	good_data=np.empty(0,dtype=np.complex64)
-
-	
 	good_data = np.append(good_data,a[adj_chans,:][f[adj_chans,:] == 0])
+
 	adj=1
-	#keep looking for data in adjacent channels if good_data empty\
-	#print(good_data.size)
+	#keep looking for data in adjacent channels if good_data empty
 	while (good_data.size==0):
 		adj += 1
-		#print('dude')
 		if (c-adj >= 0):
 			good_data = np.append(good_data,a[c-adj,:][f[c-adj,:] == 0])
-		#print('can i get uhh')
 		if (c+adj < a.shape[0]):
 			good_data = np.append(good_data,a[c+adj,:][f[c+adj,:] == 0])
 		#we gotta quit at some point, just give it flagged data from same channel
@@ -552,14 +482,60 @@ def adj_chan_good_data_alt(a,f,c,SK_M,tb):
 #---------------------------------------------------------
 # 3 . Supporting/misc functions
 #---------------------------------------------------------
-#meant to be used inline inside guppi_SK_fromraw.py with numpy arrays
 
-#INPUTS:
-#a is the input array
-#f is flags array
-#x is SK_ints
+#flatten data array 'a' into format writeable to guppi file
+#@jit(nopython=True)
+def guppi_format(a):
+	"""
+	takes array of np.complex64,ravels it and outputs as 1D array of signed 8 bit integers 
+	ordered x1r,x1i,y1r,y1i,x2r,x2i,y2r,....
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of original power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	Returns
+	-----------
+	out_arr : ndarray
+		1-dimensional array of values to be written back to the copied data file
+	"""
+	#init output
+	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
+	#get real values, ravel, cast to int8
+	arav = a.ravel()
+	a_real = np.clip(np.floor(arav.real),-128,127).astype(np.int8)
+	#get imag values, ravel, cast to int8
+	a_imag = np.clip(np.floor(arav.imag),-128,127).astype(np.int8)
+	#interleave
+	out_arr[::2] = a_real
+	out_arr[1::2] = a_imag
+	return out_arr
 
-#First, some supporting functions:
+
+
+def noise_filter(ave,std,msk,dec):
+	"""
+	Create gaussian noise filtered by the correct PFB coefficients to mimic the VEGAS coarse channel SEFD
+	Parameters
+	-----------
+	ave : float
+		average/center value of intended noise 
+	std : float
+		standard deviation of noise (before FIR)
+	msk : int
+		M parameter of SK equation. Is also the amount of new data points to generate
+	dec : decimated coefficient array to apply in FIR
+	
+	Returns
+	-----------
+	out_filtered : ndarray
+		1-dimensional string of filtered gaussian noise to inject back over masked data
+	"""
+	#make correctly scaled noise
+	out = np.random.normal(ave,std,msk)
+	#do FIR
+	out_filtered = np.convolve(dec,out,mode='same')
+	return out_filtered
+
 
 #expand small flags file (flag_chunk in guppi_SK_fromraw.py) to size of original block
 #not currently used
@@ -578,24 +554,7 @@ def method_check(s):
 	else:
 		return False
 
-#flatten data array 'a' into format writeable to guppi file
-#@jit(nopython=True)
-def guppi_format(a):
-	#takes array of np.complex64,ravels it and outputs as 1D array of signed
-	#8 bit integers ordered real,imag,real,imag,.....
-	#init output
-	out_arr = np.empty(shape=2*a.size,dtype=np.int8)
-	#get real values, ravel, cast to int8
-	#a_real = a.ravel().real.astype(np.int8)
-	arav = a.ravel()
-	a_real = np.clip(np.floor(arav.real),-128,127).astype(np.int8)
-	#get imag values, ravel, cast to int8
-	#a_imag = a.ravel().imag.astype(np.int8)
-	a_imag = np.clip(np.floor(arav.imag),-128,127).astype(np.int8)
-	#interleave
-	out_arr[::2] = a_real
-	out_arr[1::2] = a_imag
-	return out_arr
+
 
 
 #faster rolling window for SIR
