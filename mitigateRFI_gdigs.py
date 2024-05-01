@@ -4,6 +4,7 @@ detectRFI_VPM.py
 
 
 Main program for detecting/excising RFI in seraproj
+gdigs version - see pedros slack messages
 github.com/etsmit/seraproj
 
  - Opens GUPPI/VPM raw file 
@@ -83,6 +84,12 @@ from blimpy import GuppiRaw
 from RFI_detection import *
 from RFI_support import *
 
+sys.path.append('/home/scratch/psalas/projects/GDIGS-Low/gdigs-low-pipe/src/gdigs_low_pipe/rfi/')
+from arpls import *
+
+import faulthandler
+faulthandler.enable()
+
 #--------------------------------------
 # Inputs
 #--------------------------------------
@@ -107,7 +114,7 @@ parser.add_argument('-m',dest='SK_M',type=int,required=True,default=512,help='In
 
 
 #replacement method
-parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats','nans'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", nans or "stats"')
+parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", or "stats"')
 
 
 
@@ -155,7 +162,7 @@ if v_s != '0':
 	in_dir = in_dir+'vegas/AGBT19B_335_0'+v_s+'/VEGAS/'+v_b+'/'
 output_bool = args.output_bool
 d = args.d
-rfi = args.RFI
+rfi = 'aoflagger'
 ms = (args.ms).split(',')
 ms0 = int(ms[0])
 ms1 = int(ms[1])
@@ -303,135 +310,34 @@ for block in range(numblocks//mb):
 	num_SKbins = int(num_timesamples/SK_M)
 	print('Leading to '+str(num_SKbins)+' SK time bins')
 
-
+	#======================================================================
 	#Calculations
+	#this is where gdigs should start
+	flags_block = np.zeros((num_coarsechan,num_SKbins,2),dtype=np.int8)
 
-	#ASSUMING NPOL = 2:
-	s1 = np.zeros((num_coarsechan,num_SKbins,2))
-	s2 = np.zeros((num_coarsechan,num_SKbins,2))
-
-
-	#make s1 and s2 arrays, as well as avg spects
-	for k in range(num_SKbins):
-	
-		#take the stream of correct data
-		start = k*SK_M
-		end = (k+1)*SK_M
-		data_chunk = data[:,start:end,:]
-
-		data_chunk = np.abs(data_chunk)**2
-
-		s1[:,k,:] = np.sum(data_chunk,axis=1)
-		s2[:,k,:] = np.sum(data_chunk**2,axis=1)
-
-
-		#square it
-		spectrum = np.average(data_chunk,axis=1)
-
-
-		if (k==0):
-			spect_block=np.expand_dims(spectrum,axis=2)
-		else:
-			spect_block=np.c_[spect_block,np.expand_dims(spectrum,axis=2)]
-
-	#do singlescale SK flagging
-	sk_block = SK_EST_alt(s1,s2,SK_M,n=1,d=1)
-	flags_block = np.zeros(sk_block.shape,dtype=np.int8)
-	flags_block[sk_block>ut] = 1
-	flags_block[sk_block<lt] = 1
-
-	#make ms_s1 and ms_s2 arrays out of those by binning
-	ms_binsize = ms0*ms1
-	ms_s1 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	ms_s2 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	
-
-	#make multiscale S1, S2
-	for ichan in range(ms0):
-		for itime in range(ms1):
-			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-
-
-	#perform multiscale SK
-	for k in range(num_SKbins-(ms1-1)):
-	
-
-		sk_spect = np.zeros((num_coarsechan-(ms0-1),2))
-
-		#perform RFI detection
-		if (rfi == 'SKurtosis'):
-			#print(ms_s1.shape)
-			#print(ms_s2.shape)
-			sk_spect[:,0] = ms_SK_EST(ms_s1[:,k,0],ms_s2[:,k,0],SK_M-(ms1-1),n,d)
-			sk_spect[:,1] = ms_SK_EST(ms_s1[:,k,1],ms_s2[:,k,1],SK_M-(ms1-1),n,d)
-			#init flag chunk
-			ms_flag_spect = np.zeros((num_coarsechan-(ms0-1),2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			ms_flag_spect[sk_spect>ms_ut] = 1
-			ms_flag_spect[sk_spect<ms_lt] = 1
-
-
-		elif (rfi == 'SEntropy'):
-			#not done?
-			sk_spect[:,0] = entropy(data_chunk[:,:,0])
-			sk_spect[:,1] = entropy(data_chunk[:,:,1])
-			#init flag chunk
-			flag_spect = np.zeros((num_coarsechan,2),dtype=np.int8)
-			#flag (each pol separately, for records)
-			#flag_spect[sk_spect>ut] = 1
-			#flag_spect[sk_spect<lt] = 1
-
-
+	for k in range(num_pol):
+		print('arpls flagging...')
+		this_data = np.zeros((num_coarsechan,num_SKbins))
+		for i in range(num_SKbins):
+			start = i*SK_M
+			end = (i+1)*SK_M
+			this_data[:,i] = np.mean(np.abs(data[:,start:end,k])**2)
 		
-		#append to results
-		if (k==0):
-			ms_sk_block=np.expand_dims(sk_spect,axis=2)
-			ms_flags_block = np.expand_dims(ms_flag_spect,axis=2)
+		rfi_mask = arpls_mask(this_data)
+		masked_data = np.ma.masked_where(rfi_mask,this_data)
+		flags_block[:,:,k] = masked_data.mask.astype(np.int8)
+		print(np.count_nonzero(flags_block))
 
-		else:
-			ms_sk_block=np.c_[ms_sk_block,np.expand_dims(sk_spect,axis=2)]
-			ms_flags_block = np.c_[ms_flags_block,np.expand_dims(ms_flag_spect,axis=2)]
+	#======================================================================
 
 
-	#adj_chan flagging here
-	#flags_block = adj_chan_skflags(spect_block,flags_block,sk_block,1,3)
-	
-	ms_flags_block = np.transpose(ms_flags_block,(0,2,1))
 
 	#print flagged percentage for both pols from single scale SK
 	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
 
-	#print flagged percentage for both pols from multi scale SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(ms_flags_block[:,:,0])/ms_flags_block[:,:,1].size),(100.*np.count_nonzero(ms_flags_block[:,:,1])/ms_flags_block[:,:,1].size)))
-
-
-	#apply union of single scale and multiscale flag masks
-	#(each ms flag pixel covers several single scale pixels)
-	#print(flags_block.shape,ms_flags_block.shape)
-	for ichan in range(ms0):
-		for itime in range(ms1):
-			#print(flags_block.shape)
-			#print(ms_flags_block.shape)
-			flags_block[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:][ms_flags_block==1] = 1
-
-
-	#print flagged percentage for both pols from union of ss and ms SK
-	print('{}/{}% flagged'.format((100.*np.count_nonzero(flags_block[:,:,0])/flags_block[:,:,1].size),(100.*np.count_nonzero(flags_block[:,:,1])/flags_block[:,:,1].size)))
-
-	print(flags_block.shape,ms_flags_block.shape)
-
 	if (block==0):
-		sk_all = sk_block
-		ms_sk_all = ms_sk_block
-		spect_all = spect_block
-		ms_spect_all = ms_s1
 		flags_all = flags_block
 	else:
-		sk_all = np.concatenate((sk_all,sk_block),axis=1)
-		ms_sk_all = np.c_[ms_sk_all,ms_sk_block]
-		spect_all = np.c_[spect_all,spect_block]
-		ms_spect_all = np.concatenate((ms_spect_all,ms_s1),axis=1)
 		flags_all = np.concatenate((flags_all,flags_block),axis=1)
 
 	#print('shapecheck')
@@ -466,10 +372,6 @@ for block in range(numblocks//mb):
 		#replace data with zeros
 		data = repl_zeros(data,repl_chunk)
 
-	if method == 'nans':
-		#replace data with zeros
-		data = repl_nans(data,repl_chunk)
-
 	if method == 'previousgood':
 		#replace data with previous (or next) good
 		data = prevgood_init(data,repl_chunk,SK_M)
@@ -478,8 +380,9 @@ for block in range(numblocks//mb):
 	if method == 'stats':
 		print(num_iter,failed)
 		#replace data with statistical noise derived from good datapoints
+		print('stats?')
 		data = statistical_noise_alt_fir(data,repl_chunk,SK_M)
-		#data = statistical_noise_fir_abs(data,repl_chunk,'/data/scratch/SKresults/absorber_rms/vegas_60278_58882_ABS-FLAT-ON_0023.0000_rms.npy',block)
+		#data = statistical_noise_fir_abs(data,repl_chunk,'/data/scratch/SKresults/absorber_rms/vegas_59934_72163_ABSORBER_0024.0000_rms.npy',block)
 		flag_track = np.c_[np.ones(data.shape[0])*data.shape[1],np.count_nonzero(repl_chunk[:,:,0],axis=1)]
 		np.save(f'/data/scratch/SKresults/absorber_rms/flag_track{block}.npy',flag_track)
 		#num_iter += thisnum_iter
@@ -526,25 +429,7 @@ for block in range(numblocks//mb):
 #save SK results
 
 
-np.save(sk_filename, sk_all)
-print(f'{sk_all.shape} SK spectra saved in {sk_filename}')
 
-
-#save ms_SK results
-ms_sk_all = np.transpose(ms_sk_all,(0,2,1))
-
-np.save(ms_sk_filename, ms_sk_all)
-print(f'{ms_sk_all.shape} ms_SK spectra saved in {ms_sk_filename}')
-
-np.save(ms_spect_filename,ms_spect_all)
-print(f'{ms_spect_all.shape} ms_spect spectra saved in {ms_spect_filename}')
-
-
-
-#save spectrum results
-spect_all = np.transpose(spect_all,(0,2,1))
-np.save(spect_filename, spect_all)
-print(f'{spect_all.shape} Unmitigated spectra saved in {spect_filename}')
 
 
 #save mitigated results results

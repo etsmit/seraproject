@@ -106,11 +106,8 @@ parser.add_argument('-rfi',dest='RFI',type=str,required=True,choices=['SKurtosis
 #SK integrations. 'M' in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. FYI 1032704 (length of each block) has prime divisors (2**9) and 2017.
 parser.add_argument('-m',dest='SK_M',type=int,required=True,default=512,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
 
-
 #replacement method
 parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", or "stats"')
-
-
 
 #sigma thresholding
 parser.add_argument('-s',dest='sigma',type=float,default=3.0,help='Float. Sigma thresholding value. Default of 3.0 gives probability of false alarm 0.001349')
@@ -202,9 +199,13 @@ print('Probability of false alarm: {}'.format(SK_p))
 
 #calculate thresholds
 print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_M-(ms1-1), N = n, d = d, p = SK_p)
+lt, ut = SK_thresholds(SK_M, N = n, d = d, p = SK_p)
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
+
+#mslt,msut =  SK_thresholds(SK_M-(ms1-1), N = n, d = d, p = SK_p)
+
+#print
 
 
 if rawdata:
@@ -222,7 +223,7 @@ start_time = time.time()
 #os.system('rm '+outfile)
 if output_bool:
 	print('Saving replaced data to '+outfile)
-	print(infile,outfile)
+	#print(infile,outfile)
 	os.system('cp '+infile+' '+outfile)
 	out_rawFile = open(outfile,'rb+')
 
@@ -303,23 +304,47 @@ for block in range(numblocks//mb):
 	#Calculations
 
 	#ASSUMING NPOL = 2:
+	#init s1,s2,ms_s1,ms_s2
 	s1 = np.zeros((num_coarsechan,num_SKbins,2))
 	s2 = np.zeros((num_coarsechan,num_SKbins,2))
+
+	ms_s1 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
+	ms_s2 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
+
+	ms_data = np.zeros((num_coarsechan-(ms0-1),num_time_samples-(ms1-1),2))
+
+	#make multiscale data
+	for ichan in range(ms0):
+		for itime in range(ms1):
+			ms_data += (data[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
 
 
 	#make s1 and s2 arrays, as well as avg spects
 	for k in range(num_SKbins):
 	
-		#take the stream of correct data
+		#take the correct time selection of data
 		start = k*SK_M
 		end = (k+1)*SK_M
 		data_chunk = data[:,start:end,:]
+		ms_data_chunk = ms_data[ ]
 
 		data_chunk = np.abs(data_chunk)**2
+		ms_data_chunk = np.abs(ms_data_chunk)**2
 
 		s1[:,k,:] = np.sum(data_chunk,axis=1)
 		s2[:,k,:] = np.sum(data_chunk**2,axis=1)
 
+
+		#the last time bin of the multiscale window will have slightly shorter length
+		if (k+1 != num_SKbins):
+			ms_data_chunk = ms_data[:,start:end,:]
+		else:
+			ms_data_chunk = ms_data[:,start:end-(ms1-1),:]
+
+		ms_data_chunk = np.abs(ms_data_chunk)**2
+
+		ms_s1[:,k,:] = np.sum(ms_data_chunk,axis=1)
+		ms_s2[:,k,:] = np.sum(ms_data_chunk**2,axis=1)
 
 		#square it
 		spectrum = np.average(data_chunk,axis=1)
@@ -336,18 +361,7 @@ for block in range(numblocks//mb):
 	flags_block[sk_block>ut] = 1
 	flags_block[sk_block<lt] = 1
 
-	#make ms_s1 and ms_s2 arrays out of those by binning
-	ms_binsize = ms0*ms1
-	ms_s1 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	ms_s2 = np.zeros((num_coarsechan-(ms0-1),num_SKbins-(ms1-1),2))
-	
-
-	#make multiscale S1, S2
-	for ichan in range(ms0):
-		for itime in range(ms1):
-			ms_s1 += (1./ms_binsize) * (s1[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-			ms_s2 += (1./ms_binsize) * (s2[ichan:ichan+(num_coarsechan-(ms0-1)),itime:itime+(num_SKbins-(ms1-1)),:])
-
+	#==================================================================
 
 	#perform multiscale SK
 	for k in range(num_SKbins-(ms1-1)):

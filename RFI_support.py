@@ -134,8 +134,32 @@ def repl_zeros(a,f):
 
 
 
-#replace with previous good data (or future good)
 
+def repl_nans(a,f):
+	"""
+	Replace flagged data with nans.
+
+	Parameters
+	-----------
+	a : ndarray
+		3-dimensional array of power values. Shape (Num Channels , Num Raw Spectra , Npol)
+	f : ndarray
+		3-dimensional array of flags. 1=RFI detected, 0 no RFI. Shape (Num Channels , Num Raw Spectra , Npol), should be same shape as a.
+	
+	
+	Returns
+	-----------
+	out : ndarray
+		3-dimensional array of power values with flagged data replaced. Shape (Num Channels , Num Raw Spectra , Npol)
+	"""
+	#these will get cast to 0 in the next step, the 1e-4 is to stop any possible issues with log10
+	a[f==1]=np.nan
+	return a
+
+
+
+
+#replace with previous good data (or future good)
 def prevgood_init(a,f,x):
 	#fix for missing polarization forloop
 	out_arr = np.array(a)
@@ -163,7 +187,7 @@ def previous_good(a,f,x):
 	"""
 	out_arr = np.array(a)
 	for i in range(f.shape[0]):
-		#print('Coarse Chan '+str(i))
+		print('Coarse Chan '+str(i))
 		for j in range(f.shape[1]):
 			turnaround = False
 			if f[i,j] == 1:
@@ -222,11 +246,13 @@ def statistical_noise_alt_fir(a,f,SK_M):
 	print('stats....')
 	print('fshape',f.shape)
 	#find correct PFB coefficents
+	#nchan = str(f.shape[0]*4).zfill(4)
 	nchan = str(f.shape[0]).zfill(4)
 	#print(nchan,type(nchan))	
 	hfile = '/users/esmith/RFI_MIT/PFBcoeffs/c0800x'+nchan+'_x14_7_24t_095binw_get_pfb_coeffs_h.npy'
 	h = np.load(hfile)
 	dec = h[::2*f.shape[0]]
+	orig = np.copy(a)
 
 	for pol in prange(f.shape[2]):
 		for i in prange(f.shape[0]):
@@ -243,7 +269,6 @@ def statistical_noise_alt_fir(a,f,SK_M):
 					(a[i,tb*SK_M:(tb+1)*SK_M,pol].real)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = noise_filter(ave_real,std_real,SK_M,dec)
 					
 					(a[i,tb*SK_M:(tb+1)*SK_M,pol].imag)[f[i,tb*SK_M:(tb+1)*SK_M,pol] == 1] = noise_filter(ave_imag,std_imag,SK_M,dec)
-	#print('returning a')
 	return a
 
 
@@ -328,18 +353,39 @@ def statistical_noise_fir_abs(a,f,rms_txt,block):
 	model = np.load(rms_txt)
 	model_x = model[:,0]
 	model_y = model[:,1]
+	deg=16
 
 
 	#find rms and scale to match the unflagged data
-	data_ma = np.copy(np.ma.masked_array(a,f))
-	data_rms = np.std(data_ma,axis=1)
+	#data_ma = np.copy(np.ma.masked_array(a,f))
+	data_ma = np.copy(a)
+	data_ma[f==1] = np.nan
+	data_rms = np.nanstd(data_ma,axis=1)
 	fit_start = int(0.1*len(model_x))
 	fit_end = int(0.65*len(model_x))
 	fit_chans = np.r_[fit_start:fit_end]
+	chans = np.arange(data_rms.shape[0])
+	#scale_x = scipy.optimize.least_squares(fitfunc,1,args=(model_x[fit_chans],data_rms[:,0][fit_chans]))["x"][0]
+	#scale_y = scipy.optimize.least_squares(fitfunc,1,args=(model_y[fit_chans],data_rms[:,1][fit_chans]))["x"][0]
 
-	scale_x = scipy.optimize.least_squares(fitfunc,1,args=(model_x[fit_chans],data_rms[:,0][fit_chans]))["x"][0]
-	scale_y = scipy.optimize.least_squares(fitfunc,1,args=(model_y[fit_chans],data_rms[:,1][fit_chans]))["x"][0]
-	std_noise = np.c_[scale_x * model_x , scale_y * model_y]
+	#numpy poly fit the normalized difference between data and model
+	print(data_rms.shape)
+	print(model.shape)
+	print(chans.shape)
+	spec_to_fit = ((data_rms - model)/model)
+	idx_x = np.isfinite(spec_to_fit[:,0])
+	idx_y = np.isfinite(spec_to_fit[:,1])
+	
+
+	popt_x = np.polyfit(chans[idx_x],spec_to_fit[:,0][idx_x],deg)
+	popt_y = np.polyfit(chans[idx_y],spec_to_fit[:,1][idx_y],deg)
+	px = np.poly1d(popt_x)
+	py = np.poly1d(popt_y)
+
+
+	std_noise = np.c_[model_x + px(chans)*model_x , model_y + px(chans)*model_y]
+
+	#std_noise = np.c_[scale_x * model_x , scale_y * model_y]
 	#np.save(f'/data/scratch/SKresults/absorber_rms/std_noise{block}.npy',std_noise)
 
 	print(f.shape)
@@ -495,6 +541,7 @@ def adj_chan_good_data_alt(a,f,c,SK_M,tb):
 	std_imag = np.std(good_data.imag)
 
 	return ave_real,ave_imag,std_real,std_imag
+
 
 
 

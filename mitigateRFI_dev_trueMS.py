@@ -4,6 +4,7 @@ detectRFI_VPM.py
 
 
 Main program for detecting/excising RFI in seraproj
+does the true multiscale thing where it increases M from small to large
 github.com/etsmit/seraproj
 
  - Opens GUPPI/VPM raw file 
@@ -91,7 +92,7 @@ from RFI_support import *
 #in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#using lustre (no longer available)
 in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz only
 out_dir = '/data/scratch/SKresults/'#leibniz only
-jstor_dir = '/jetstor/scratch/SK_rawdata_results/'#leibniz only
+jstor_dir = '/jetstor/scratch/SK_raw_data_results/'#leibniz only
 
 #argparse parsing
 parser = argparse.ArgumentParser(description="""function description""")
@@ -100,14 +101,14 @@ parser = argparse.ArgumentParser(description="""function description""")
 parser.add_argument('-i',dest='infile',type=str,required=True,help='String. Required. Name of input filename. Automatically pulls from standard data directory. If leading "/" given, pulls from given directory')
 
 #RFI detection method
-parser.add_argument('-rfi',dest='RFI',type=str,required=False,choices=['SKurtosis','SEntropy'],default='SKurtosis',help='String. Required. RFI detection method desired.')
+parser.add_argument('-rfi',dest='RFI',type=str,required=True,choices=['SKurtosis','SEntropy'],default='SKurtosis',help='String. Required. RFI detection method desired.')
 
-#SK integrations. 'M' in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. FYI 1032704 (length of each block) has prime divisors (2**9) and 2017.
-parser.add_argument('-m',dest='SK_M',type=int,required=True,default=512,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
+#M start,stop,increment
+parser.add_argument('-m',dest='SK_M',type=str,required=True,help='Integer. Required. "M" in the SK equation. Number of data points to perform SK on at once/average together for spectrogram. ex. 1032704 (length of each block) has prime divisors (2**9) and 2017. Default 512.')
 
 
 #replacement method
-parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats','nans'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", nans or "stats"')
+parser.add_argument('-r',dest='method',type=str,choices=['zeros','previousgood','stats'], required=True,default='zeros',help='String. Required. Replacement method of flagged data in output raw data file. Can be "zeros","previousgood", or "stats"')
 
 
 
@@ -144,7 +145,10 @@ parser.add_argument('-mult',dest='mb',type=int,default=1,help='load multiple blo
 #parse input variables
 args = parser.parse_args()
 infile = args.infile
-SK_M = args.SK_M
+SK_M = (args.SK_M).split(',')
+M_start = int(SK_M[0])
+M_end = int(SK_M[1])
+M_inc = int(SK_M[2])
 method = args.method
 rawdata = args.rawdata
 sigma = args.sigma
@@ -201,14 +205,9 @@ print('Probability of false alarm: {}'.format(SK_p))
 
 #calculate thresholds
 print('Calculating SK thresholds...')
-lt, ut = SK_thresholds(SK_M, N = n, d = d, p = SK_p)
+lt, ut = SK_thresholds(SK_M-(ms1-1), N = n, d = d, p = SK_p)
 print('Upper Threshold: '+str(ut))
 print('Lower Threshold: '+str(lt))
-
-#calculate ms thresholds
-ms_lt, ms_ut = SK_thresholds(SK_M*ms0*ms1, N = n, d = d, p = SK_p)
-print('MS Upper Threshold: '+str(ms_ut))
-print('MS Lower Threshold: '+str(ms_lt))
 
 
 if rawdata:
@@ -256,24 +255,11 @@ for block in range(numblocks//mb):
 		header,headersize = rawFile.read_header()
 		print('Header size: {} bytes'.format(headersize))
 
-	#loading multiple blocks at once?	
-	for mb_i in range(mb):
-		if mb_i==0:
-			header,data = rawFile.read_next_data_block()
-			data = np.copy(data)
-			#length in spectra of one block, for use during rewriting mit. data
-			d1s = data.shape[1]
-		else:
-			h2,d2 = rawFile.read_next_data_block()
-			data = np.append(data,np.copy(d2),axis=1)
+	#load in one block
+	header,data = rawFile.read_next_data_block()
+
 
 	#data is channelized voltages
-
-	#print header for the first block
-	if block == 0:
-		print('Datatype: '+str(type(data[0,0,0])))
-		for line in header:
-			print(line+':  '+str(header[line]))
 
 
 	#find data shape
@@ -292,8 +278,8 @@ for block in range(numblocks//mb):
 
 
 
-	#Check to see if SK_M divides the total amount of data points
-	mismatch = num_timesamples % SK_M
+	#Check to see if M_end divides the total amount of data points
+	mismatch = num_timesamples % M_end
 	if (mismatch != 0):
 		print('Warning: SK_M does not divide the amount of time samples')
 		#exit()
@@ -368,8 +354,8 @@ for block in range(numblocks//mb):
 			#init flag chunk
 			ms_flag_spect = np.zeros((num_coarsechan-(ms0-1),2),dtype=np.int8)
 			#flag (each pol separately, for records)
-			ms_flag_spect[sk_spect>ms_ut] = 1
-			ms_flag_spect[sk_spect<ms_lt] = 1
+			ms_flag_spect[sk_spect>ut] = 1
+			ms_flag_spect[sk_spect<lt] = 1
 
 
 		elif (rfi == 'SEntropy'):
@@ -466,10 +452,6 @@ for block in range(numblocks//mb):
 		#replace data with zeros
 		data = repl_zeros(data,repl_chunk)
 
-	if method == 'nans':
-		#replace data with zeros
-		data = repl_nans(data,repl_chunk)
-
 	if method == 'previousgood':
 		#replace data with previous (or next) good
 		data = prevgood_init(data,repl_chunk,SK_M)
@@ -478,8 +460,8 @@ for block in range(numblocks//mb):
 	if method == 'stats':
 		print(num_iter,failed)
 		#replace data with statistical noise derived from good datapoints
-		data = statistical_noise_alt_fir(data,repl_chunk,SK_M)
-		#data = statistical_noise_fir_abs(data,repl_chunk,'/data/scratch/SKresults/absorber_rms/vegas_60278_58882_ABS-FLAT-ON_0023.0000_rms.npy',block)
+		#data = statistical_noise_alt_fir(data,repl_chunk,SK_M)
+		data = statistical_noise_fir_abs(data,repl_chunk,'/data/scratch/SKresults/absorber_rms/vegas_59934_72163_ABSORBER_0024.0000_rms.npy',block)
 		flag_track = np.c_[np.ones(data.shape[0])*data.shape[1],np.count_nonzero(repl_chunk[:,:,0],axis=1)]
 		np.save(f'/data/scratch/SKresults/absorber_rms/flag_track{block}.npy',flag_track)
 		#num_iter += thisnum_iter

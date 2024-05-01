@@ -89,9 +89,10 @@ from RFI_support import *
 
 #in_dir = '/export/home/ptcs/scratch/raw_RFI_data/'#using maxwell (no longer available?)
 #in_dir = '/lustre/pulsar/users/rlynch/RFI_Mitigation/'#using lustre (no longer available)
-in_dir = '/data/rfimit/unmitigated/rawdata/'#leibniz only
+in_dir = '/jetstor/scratch/rfimit/unmitigated/rawdata/'#leibniz only
 out_dir = '/data/scratch/SKresults/'#leibniz only
-jstor_dir = '/jetstor/scratch/SK_rawdata_results/'#leibniz only
+#jstor_dir = '/jetstor/scratch/SK_rawdata_results/'#leibniz only
+jstor_dir = '/jetstor/scratch/rfimit/mitigated/rawdata/'#leibniz raw data output
 
 #argparse parsing
 parser = argparse.ArgumentParser(description="""function description""")
@@ -162,6 +163,8 @@ ms1 = int(ms[1])
 cust = args.cust
 mb = args.mb
 
+if len(cust)>0:
+	cust='_'+cust
 
 num_iter = 0
 failed = 0
@@ -169,7 +172,9 @@ failed = 0
 #input file
 #pulls from the raw data directory if full path not given
 if infile[0] != '/':
+	infile = infile[:infile.index('.')]+'/'+infile
 	infile = in_dir + infile
+	print(infile)
 else:
 	in_dir = infile[:infile.rfind('/')+1]
 	#infile = infile[infile.rfind('/')+1:]
@@ -180,19 +185,6 @@ if infile[-4:] != '.raw':
 #--------------------------------------
 # Inits
 #--------------------------------------
-
-
-npybase = out_dir+'npy_results/'+infile[len(in_dir):-4]
-
-#filenames to save to
-ms_sk_filename = f"{npybase}_MSSK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-ms_spect_filename = f"{npybase}_MSspect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-sk_filename = f"{npybase}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
-flags_filename = f"{npybase}_flags_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
-spect_filename = f"{npybase}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
-regen_filename = f"{npybase}_regen_m{SK_M}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.npy"
-#outfile = f"{out_dir+'raw_results/'}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
-outfile = f"{jstor_dir}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
 
 
 #threshold calc from sigma
@@ -209,6 +201,28 @@ print('Lower Threshold: '+str(lt))
 ms_lt, ms_ut = SK_thresholds(SK_M*ms0*ms1, N = n, d = d, p = SK_p)
 print('MS Upper Threshold: '+str(ms_ut))
 print('MS Lower Threshold: '+str(ms_lt))
+
+
+npybase = out_dir+'npy_results/'+infile[len(in_dir):-4]
+
+#filenames to save to
+ms_sk_filename = f"{npybase}_MSSK_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+ms_spect_filename = f"{npybase}_MSspect_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+sk_filename = f"{npybase}_SK_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
+flags_filename = f"{npybase}_flags_m{SK_M}_{method}_s{sigma}_{rfi}_ms{ms0}-{ms1}_{cust}.npy"
+spect_filename = f"{npybase}_spect_m{SK_M}_{method}_s{sigma}_{rfi}_{cust}.npy"
+regen_filename = f"{npybase}_regen_m{SK_M}_{method}_s{sigma}_{rfi}_mb{mb}_{cust}.npy"
+#outfile = f"{out_dir+'raw_results/'}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
+base_fn = infile[infile.rfind('/')+1:infile.index('.')]
+extra = infile[infile.index('.'):]
+#outfile = f"{jstor_dir}{infile[:infile.index('.')]}{infile[len(in_dir):-4]}_{method}_m{SK_M}_s{sigma}_{rfi}_ms{ms0}-{ms1}_mb{mb}_{cust}{infile[-4:]}"
+outfile = f"{jstor_dir}{base_fn}/{base_fn}{extra}_SK_m{SK_M}_ms{ms0}_thresh{np.around(1-SK_p,4)}_{method}{cust}{infile[-4:]}"
+
+
+print(infile,os.path.isfile(infile))
+print(outfile,os.path.isfile(outfile))
+input('Good?')
+
 
 
 if rawdata:
@@ -446,10 +460,10 @@ for block in range(numblocks//mb):
 	#print(repl_chunk.shape)
 	print('transposed')
 	#now flag shape is (chan,spectra,pol)
-	#apply union of flags across pols
-	repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
-	repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
-	print('union')
+	#do not apply union of flags across pols
+	#repl_chunk[:,:,0][repl_chunk[:,:,1]==1]=1
+	#repl_chunk[:,:,1][repl_chunk[:,:,0]==1]=1
+	#print('union')
 
 	
 	#extend flagging array to be same size as raw data
